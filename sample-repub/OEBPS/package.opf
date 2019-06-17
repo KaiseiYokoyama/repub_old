@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package unique-identifier="BookId" version="3.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns="http://www.idpf.org/2007/opf">
+<metadata>
+<dc:title>sample</dc:title>
+<dc:language>jp</dc:language>
+<dc:creator>crome</dc:creator>
+<dc:identifier id="BookId">OBwJ9SMHThCXF09w5kVIsUspsw9NiO</dc:identifier>
+<meta property="dcterms:modified">2019-06-17T04:46:38Z</meta>
+</metadata>
+<manifest>
+<item id="book_0" href="IIIF_Images.xhtml" media-type="application/xhtml+xml" />
+</manifest>
+<spine>
+<itemref idref="book_0" />
+</spine>
+</package>
