@@ -1,0 +1,56 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+<meta charset="utf-8" />
+
+<title>IIIF Images.md</title>
+</head>
+<body>
+<h1>IIIFのマニフェストからImageの一覧を引き出す</h1>
+<p>IIIFというデジタルアーカイブの規格があって、世界中の図書館がこの形式に従ったJSON（Manifestと読んでいるらしい）をウェブに公開している。</p>
+<p>http://digitalnagasaki.hatenablog.com/entry/2016/04/28/192349</p>
+<p>授業で<a href="https://projectmirador.org/">Mirador(ミラドール)</a>のようなIIIF用画像ビューアを作りたいということになり、まずはManifestをパースしてイメージのurl一覧を出力するプログラムをRustで組んでみた。</p>
+<p><a href="https://github.com/crome110/iiif_images_sample">iiif_images_sample</a></p>
+<h1>知見</h1>
+<h2>Rustにおける実行時引数の取得</h2>
+<pre><code class="language-rust">// 実行時引数
+let args: Vec&lt;String&gt; = std::env::args().collect();
+</code></pre>
+<p>これで実行時引数を<code>args</code>の中に格納できる。<code>args[0]</code>には実行パスが入っている。</p>
+<h2>serde_json</h2>
+<h3>フィールドのRename</h3>
+<pre><code class="language-rust">#[derive(Deserialize, Debug)]
+pub struct Manifest {
+    #[serde(rename = &quot;@context&quot;)]
+    context: String,
+    #[serde(rename = &quot;@id&quot;)]
+    id: String,
+    #[serde(rename = &quot;@type&quot;)]
+    type_: String,
+    license: String,
+    attribution: String,
+    description: String,
+    label: String,
+    sequences: Vec&lt;Sequence&gt;,
+}
+</code></pre>
+<p><code>#[serde(rename = &quot;&lt;JSONでの名前&gt;&quot;)]</code>でフィールドのJSONにおける名前を変更できる。serdeのAttributesは知っておくとかなり便利。</p>
+<p>https://serde.rs/attributes.html</p>
+<h3>Deserialize(JSON -&gt; Struct)時に、余計なフィールドを無視する</h3>
+<p>知らないフィールドがあるとErrorを返すと勝手に思っていたが、どうやら無視するらしい。
+知らないフィールドなんて無いぜ！　とserdeに伝えたいときは<code>#[serde(deny_unknown_fields)]</code>をstructやenumにアトリビュートとしてつける(Container Attributesの一種)。</p>
+<pre><code class="language-rust">#[derive(Deserialize)]
+pub struct A {
+  a: String,
+}
+
+let json_str = &quot;{
+        \&quot;a\&quot;: \&quot;str\&quot;,
+        \&quot;b\&quot;: \&quot;str\&quot;
+    }&quot;;
+// panicしない
+let a: A = serde_json::from_str().unwrap();
+</code></pre>
+<p>https://play.rust-lang.org/?version=stable&amp;mode=debug&amp;edition=2018&amp;gist=17ee2df93eecb1aabec2aee873cecb54</p>
+
+</body>
+</html>
