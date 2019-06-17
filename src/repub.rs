@@ -76,7 +76,7 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        return format!("<manifest>\n{}</manifest>\n", items);
+        return format!("<manifest>\n{}\n{}\n</manifest>", items, "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
     }
 
     fn to_spine(&self, vertical: bool) -> String {
@@ -247,12 +247,20 @@ impl RepubBuilder {
 
         // OEBPSフォルダ設置
         let oebps_path = &dir_path.join("OEBPS");
-        std::fs::create_dir_all(oebps_path);
+        std::fs::create_dir_all(&oebps_path);
 
-        // package.ops設置
+        // スタイルフォルダ設置
+        let styles = oebps_path.join("styles");
+        std::fs::create_dir_all(&styles);
+
+        // 縦書きスタイル
+        let vertical_css_path = styles.join("vertical.css");
+        let mut vertical_css = File::create(vertical_css_path).unwrap();
+        vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes());
+
+        // package.opf設置
         let mut package_opf = File::create(
-            &dir_path.join("OEBPS")
-                .join("package.opf")).unwrap();
+            &oebps_path.join("package.opf")).unwrap();
 
         // package.ops書き込み準備
         let metadata = MetaData {
@@ -264,14 +272,15 @@ impl RepubBuilder {
         let mut items = Items::default();
 
         // ファイル読み込み&変換
+        let vertical = &self.vertical;
         if souce_file_path.is_file() {
-            convert(souce_file_path, oebps_path, &mut items);
+            convert(souce_file_path, oebps_path, &mut items, vertical.clone());
         } else {
             for entry in std::fs::read_dir(souce_file_path).unwrap() {
                 let entry = entry.unwrap();
                 let path = entry.path();
                 if "md" == path.extension().unwrap().to_str().unwrap() {
-                    convert(&path, oebps_path, &mut items);
+                    convert(&path, oebps_path, &mut items, vertical.clone());
                 }
             }
         }
@@ -283,7 +292,7 @@ impl RepubBuilder {
 }
 
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items) {
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, vertical: bool) {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
@@ -297,9 +306,12 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items) {
 <html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
 <head>\n\
 <meta charset=\"utf-8\" />\n\
+{}\n\
 <title>{}</title>\n\
 </head>\n\
-<body>\n{}\n</body>\n</html>", source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
+<body>\n{}\n</body>\n</html>",
+                       if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
+                       , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
 
     // source file name
     let name = source_path.file_stem().unwrap().to_str().unwrap().replace(" ", "_");
