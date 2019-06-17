@@ -12,6 +12,7 @@ pub struct RepubBuilder {
     creator: String,
     language: String,
     id: String,
+    vertical: bool,
 }
 
 impl Default for RepubBuilder {
@@ -22,6 +23,7 @@ impl Default for RepubBuilder {
             title: String::default(),
             creator: String::default(),
             language: String::default(),
+            vertical: false,
         }
     }
 }
@@ -32,11 +34,11 @@ struct Package<'a> {
 }
 
 impl<'a> Package<'a> {
-    fn to_opf(&self) -> String {
+    fn to_opf(&self, vertical: bool) -> String {
         format!("<?xml version='1.0' encoding='utf-8'?>\n\
 <package unique-identifier=\"BookId\" version=\"3.0\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns=\"http://www.idpf.org/2007/opf\">\n\
 {}{}{}\
-</package>", &self.metadata.to_xml(), &self.items.to_manifest(), &self.items.to_spine())
+</package>", &self.metadata.to_xml(), &self.items.to_manifest(), &self.items.to_spine(vertical))
     }
 }
 
@@ -74,17 +76,22 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        return format!("<manifest>\n{}</manifest>\n", items);
+        return format!("<manifest>\n{}\n{}\n</manifest>", items, "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
     }
 
-    fn to_spine(&self) -> String {
+    fn to_spine(&self, vertical: bool) -> String {
         let mut items = String::new();
         for i in 0..self.items.len() {
             let item = &self.items[i];
             items = format!("{}{}\n", items, item.to_spine(i));
         }
 
-        return format!("<spine>\n{}</spine>\n", items);
+        return if vertical {
+            // 縦書き->右綴じ
+            format!("<spine page-progression-direction=\"rtl\">\n{}</spine>\n", items)
+        } else {
+            format!("<spine>\n{}</spine>\n", items)
+        };
     }
 }
 
@@ -150,6 +157,7 @@ impl RepubBuilder {
 
         let mut repub_builder = RepubBuilder {
             source_file: file_path,
+            vertical: matches.is_present("vertical"),
             ..RepubBuilder::default()
         };
 
@@ -239,12 +247,20 @@ impl RepubBuilder {
 
         // OEBPSフォルダ設置
         let oebps_path = &dir_path.join("OEBPS");
-        std::fs::create_dir_all(oebps_path);
+        std::fs::create_dir_all(&oebps_path);
 
-        // package.ops設置
+        // スタイルフォルダ設置
+        let styles = oebps_path.join("styles");
+        std::fs::create_dir_all(&styles);
+
+        // 縦書きスタイル
+        let vertical_css_path = styles.join("vertical.css");
+        let mut vertical_css = File::create(vertical_css_path).unwrap();
+        vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes());
+
+        // package.opf設置
         let mut package_opf = File::create(
-            &dir_path.join("OEBPS")
-                .join("package.opf")).unwrap();
+            &oebps_path.join("package.opf")).unwrap();
 
         // package.ops書き込み準備
         let metadata = MetaData {
@@ -256,26 +272,27 @@ impl RepubBuilder {
         let mut items = Items::default();
 
         // ファイル読み込み&変換
+        let vertical = &self.vertical;
         if souce_file_path.is_file() {
-            convert(souce_file_path, oebps_path, &mut items);
+            convert(souce_file_path, oebps_path, &mut items, vertical.clone());
         } else {
             for entry in std::fs::read_dir(souce_file_path).unwrap() {
                 let entry = entry.unwrap();
                 let path = entry.path();
                 if "md" == path.extension().unwrap().to_str().unwrap() {
-                    convert(&path, oebps_path, &mut items);
+                    convert(&path, oebps_path, &mut items, vertical.clone());
                 }
             }
         }
 
         // package.ops書き込み
         let package = Package { metadata, items };
-        package_opf.write_all(&package.to_opf().as_bytes());
+        package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes());
     }
 }
 
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items) {
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, vertical: bool) {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
@@ -289,12 +306,15 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items) {
 <html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
 <head>\n\
 <meta charset=\"utf-8\" />\n\
+{}\n\
 <title>{}</title>\n\
 </head>\n\
-<body>\n{}\n</body>\n</html>", source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
+<body>\n{}\n</body>\n</html>",
+                       if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
+                       , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
 
     // source file name
-    let name = source_path.file_stem().unwrap();
+    let name = source_path.file_stem().unwrap().to_str().unwrap().replace(" ", "_");
 
     // xml path
     let mut xhtml = PathBuf::from(name);

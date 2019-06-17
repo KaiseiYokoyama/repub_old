@@ -1,6 +1,7 @@
 /.idea/*
 /sample
 /title-repub
+/sample-repub
 /target
 **/*.rs.bk
 

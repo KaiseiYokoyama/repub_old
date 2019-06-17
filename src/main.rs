@@ -31,11 +31,18 @@ fn main() -> Result<(), ()> {
             .short("l")
             .long("language")
             .takes_value(true))
+        // id
         .arg(Arg::with_name("book_id")
             .help("Book ID")
             .short("id")
             .long("bookid")
-            .takes_value(true));
+            .takes_value(true))
+        // 縦書き
+        .arg(Arg::with_name("vertical")
+            .help("縦書き")
+            .short("v")
+            .long("vertical"))
+        ;
 
     let matches = app.get_matches();
 
