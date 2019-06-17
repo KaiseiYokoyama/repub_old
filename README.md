@@ -1,5 +1,5 @@
 # repub
-markdownをepub形式に変換します
+markdownをepub 3.0.1形式に変換します
 
 ## usage
 ```
@@ -28,7 +28,7 @@ ARGS:
 // title-repubフォルダに移動
 cd title-repub
 
-// mimetypeファイルをzipの先頭に
+// mimetypeファイルを無圧縮でzipの先頭に
 zip -x0q sample.epub mimetype
 
 // OEBPSフォルダをzipに追加
