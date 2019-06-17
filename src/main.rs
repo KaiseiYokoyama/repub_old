@@ -12,7 +12,7 @@ fn main() -> Result<(), ()> {
         .author(crate_authors!())
         .about(crate_description!())
         // .mdファイルorフォルダ
-        .arg(Arg::from_usage("<input> '変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ"))
+        .arg(Arg::from_usage("<input> '変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ'"))
         // タイトル
         .arg(Arg::with_name("title")
             .help("タイトルを設定")

@@ -3,6 +3,9 @@ markdownをepub 3.0.1形式に変換します
 
 ## usage
 ```
+repub 0.1.0
+convert markdown(s) to epub
+
 USAGE:
     repub [OPTIONS] <input>
 
@@ -17,7 +20,7 @@ OPTIONS:
     -t, --title <title>          タイトルを設定
 
 ARGS:
-    <input>    the input file to conver
+    <input>    変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ
 ```
 
 ## zipping
