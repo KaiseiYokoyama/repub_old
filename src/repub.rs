@@ -77,7 +77,7 @@ impl Items {
         }
 
         return format!("<manifest>\n{}\n{}\n{}\n</manifest>",
-                       "<item id=\"navigation\" href=\"navigation.opf\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
+                       "<item id=\"navigation\" href=\"navigation.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
                        items,
                        "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
     }
@@ -226,18 +226,19 @@ impl RepubBuilder {
 
     pub fn build(&self) {
         let souce_file_path = &self.source_file;
-        let mut dir_path = souce_file_path.parent().unwrap()
-            .join(&format!("{}{}", &self.title, "-repub"));
+        let mut dir_path = PathBuf::from(".");
 
         // unzipされたファイルの一時置き場所
-        std::fs::create_dir_all(&dir_path);
+//        std::fs::create_dir_all(&dir_path);
 
         // mimetypeファイル設置
-        let mut mimetype = File::create(&dir_path.join("mimetype")).unwrap();
+        let mimetype_path = &dir_path.join("mimetype");
+        let mut mimetype = File::create(&mimetype_path).unwrap();
         mimetype.write_all("application/epub+zip".as_bytes()).unwrap();
 
         // META-INFフォルダ設置
-        std::fs::create_dir_all(&dir_path.join("META-INF"));
+        let meta_inf = &dir_path.join("META-INF");
+        std::fs::create_dir_all(&meta_inf);
 
         // container.xml設置
         let mut container = File::create(
@@ -297,7 +298,7 @@ impl RepubBuilder {
 
         // navigation.opf作成
         let mut navigation_opf = File::create(
-            &oebps_path.join("navigation.opf")).unwrap();
+            &oebps_path.join("navigation.xhtml")).unwrap();
         let mut lis_html = String::new();
         for li in lis {
             lis_html = format!("{}{}", lis_html, li);
@@ -309,6 +310,7 @@ impl RepubBuilder {
 <head>\
 <meta charset=\"utf-8\" />\
 <title>目次</title>\
+{}\
 </head>\
 <body>\
 <nav epub:type=\"toc\">\
@@ -316,15 +318,99 @@ impl RepubBuilder {
 <ol>{}</ol>\
 </nav>\
 </body>\
-</html>", &lis_html).as_bytes());
+</html>", if self.vertical.clone() { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }, &lis_html).as_bytes());
+
+        // mimetypeファイルの場所(相対パス)
+        let mimetype_path = dir_path.join("mimetype");
+        // meta_infフォルダの場所(相対パス)
+        let meta_inf_path = dir_path.join("META-INF");
+        // OEBPSフォルダの場所(相対パス)
+        let oebps_path = dir_path.join("OEBPS");
+
+//        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
+        self.make_with_command(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
+    }
+
+    /// zip前のフォルダのpathから.epubを生成する
+    fn make(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
+        use std::io::{Seek, Write};
+        use zip::result::ZipResult;
+        use zip::write::{FileOptions, ZipWriter};
+
+        let epub_path = format!("{}.epub", &self.title);
+        let mut epub_path = dir_path.join(&epub_path);
+        let mut epub = match File::create(&epub_path) {
+            Ok(file) => {
+                file
+            }
+            Err(_) => {
+                std::fs::remove_file(&epub_path);
+                File::create(&epub_path).unwrap()
+            }
+        };
+
+        let mut writer = ZipWriter::new(epub);
+        writer.start_file(mimetype.to_str().unwrap(),
+                          FileOptions::default().compression_method(CompressionMethod::Stored))?;
+        let method = CompressionMethod::Deflated;
+        // META-INF
+        writer.add_directory_from_path(meta_inf,
+                                       FileOptions::default().compression_method(method))?;
+        for entry in std::fs::read_dir(&meta_inf).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                writer.start_file_from_path(path.as_path(),
+                                            FileOptions::default().compression_method(method));
+            }
+        }
+        // OEBPS
+        writer.add_directory_from_path(oebps, FileOptions::default().compression_method(method))?;
+        for entry in std::fs::read_dir(&oebps).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                writer.start_file_from_path(path.as_path(), FileOptions::default());
+            }
+        }
+
+        writer.finish()?;
+
+        return Ok(());
+    }
+
+    /// zip前のフォルダのpathからコマンドを用いて.epubを生成する
+    fn make_with_command(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) {
+        use std::process::Command;
+
+        if cfg!(target_os = "macos") {
+            let epubname = &format!("{}.epub", &self.title);
+            Command::new("zip")
+                .arg("-x0q")
+                .arg(epubname)
+                .arg(mimetype.to_str().unwrap())
+                .output().expect("Missed zip mimetype");
+            Command::new("zip")
+                .arg("-Xr9Dq")
+                .arg(epubname)
+                .arg(meta_inf.to_str().unwrap())
+                .output().expect("Missed zip META-INF");
+            Command::new("zip")
+                .arg("-Xr9Dq")
+                .arg(epubname)
+                .arg(oebps.to_str().unwrap())
+                .output().expect("Missed zip OEBPS");
+        }
     }
 }
 
 use scraper::{Html, Selector};
 use scraper::node::Element;
 use std::collections::HashSet;
+use std::error::Error;
+use zip::CompressionMethod;
+use zip::result::ZipResult;
 
-// domからheaderを読み取り、headerにidをつけ、headerへのリンクを含むli要素のVecを返す
+/// domからheaderを読み取り、li要素のVecを返す
+/// todo headerにidをつける liとリンクする
 fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
     let header_selector = Selector::parse("h1,h2,h3").unwrap();
     let headers = dom.select(&header_selector);

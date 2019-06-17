@@ -49,8 +49,6 @@ fn main() -> Result<(), ()> {
     let mut repub_builder = repub::RepubBuilder::new(
         Path::new(&matches.value_of("input").unwrap()), &matches)?;
 
-    println!("{:?}", &repub_builder);
-
     repub_builder.build();
 
     return Ok(());
