@@ -76,7 +76,10 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        return format!("<manifest>\n{}\n{}\n</manifest>", items, "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
+        return format!("<manifest>\n{}\n{}\n{}\n</manifest>",
+                       "<item id=\"navigation\" href=\"navigation.opf\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
+                       items,
+                       "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
     }
 
     fn to_spine(&self, vertical: bool) -> String {
@@ -88,9 +91,11 @@ impl Items {
 
         return if vertical {
             // 縦書き->右綴じ
-            format!("<spine page-progression-direction=\"rtl\">\n{}</spine>\n", items)
+            format!("<spine page-progression-direction=\"rtl\">\n{}\n{}</spine>\n",
+                    "<itemref idref=\"navigation\" />",
+                    items)
         } else {
-            format!("<spine>\n{}</spine>\n", items)
+            format!("<spine>\n{}\n{}</spine>\n", "<itemref idref=\"navigation\" />", items)
         };
     }
 }
@@ -262,7 +267,7 @@ impl RepubBuilder {
         let mut package_opf = File::create(
             &oebps_path.join("package.opf")).unwrap();
 
-        // package.ops書き込み準備
+        // package.opf書き込み準備
         let metadata = MetaData {
             title: &self.title,
             creator: &self.creator,
@@ -273,14 +278,15 @@ impl RepubBuilder {
 
         // ファイル読み込み&変換
         let vertical = &self.vertical;
+        let mut lis = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, oebps_path, &mut items, vertical.clone());
+            convert(souce_file_path, oebps_path, &mut items, &mut lis, vertical.clone());
         } else {
             for entry in std::fs::read_dir(souce_file_path).unwrap() {
                 let entry = entry.unwrap();
                 let path = entry.path();
                 if "md" == path.extension().unwrap().to_str().unwrap() {
-                    convert(&path, oebps_path, &mut items, vertical.clone());
+                    convert(&path, oebps_path, &mut items, &mut lis, vertical.clone());
                 }
             }
         }
@@ -288,11 +294,51 @@ impl RepubBuilder {
         // package.ops書き込み
         let package = Package { metadata, items };
         package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes());
+
+        // navigation.opf作成
+        let mut navigation_opf = File::create(
+            &oebps_path.join("navigation.opf")).unwrap();
+        let mut lis_html = String::new();
+        for li in lis {
+            lis_html = format!("{}{}", lis_html, li);
+        }
+
+        navigation_opf.write_all(&format!("<?xml version='1.0' encoding='utf-8'?>\
+<!DOCTYPE html>\
+<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\
+<head>\
+<meta charset=\"utf-8\" />\
+<title>目次</title>\
+</head>\
+<body>\
+<nav epub:type=\"toc\">\
+<h1>目次</h1>\
+<ol>{}</ol>\
+</nav>\
+</body>\
+</html>", &lis_html).as_bytes());
     }
 }
 
+use scraper::{Html, Selector};
+use scraper::node::Element;
+use std::collections::HashSet;
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, vertical: bool) {
+// domからheaderを読み取り、headerにidをつけ、headerへのリンクを含むli要素のVecを返す
+fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
+    let header_selector = Selector::parse("h1,h2,h3").unwrap();
+    let headers = dom.select(&header_selector);
+
+    let mut lis: Vec<String> = Vec::new();
+    for header in headers {
+        let li = format!("<li header=\"{}\">{}</li>", header.value().name(), header.inner_html());
+        lis.push(li);
+    }
+
+    return lis;
+}
+
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: &mut Vec<String>, vertical: bool) {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
@@ -301,9 +347,7 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, verti
     let mut md = String::new();
     md_file.read_to_string(&mut md);
     // convert
-    let html = format!("<?xml version='1.0' encoding='utf-8'?>\n\
-<!DOCTYPE html>\n\
-<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
+    let html = format!("<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
 <head>\n\
 <meta charset=\"utf-8\" />\n\
 {}\n\
@@ -313,19 +357,28 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, verti
                        if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
                        , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
 
+    let xhtml = format!("<?xml version='1.0' encoding='utf-8'?>\n\
+<!DOCTYPE html>\n\
+{}
+", &html);
+
     // source file name
     let name = source_path.file_stem().unwrap().to_str().unwrap().replace(" ", "_");
 
+    // toc
+    let dom = Html::parse_document(&html);
+    lis.append(&mut toc_from_dom(dom, &name));
+
     // xml path
-    let mut xhtml = PathBuf::from(name);
-    xhtml.set_extension("xhtml");
-    let mut xhtml_file_path = &oebps_path.join(&xhtml);
+    let mut xhtml_path = PathBuf::from(name);
+    xhtml_path.set_extension("xhtml");
+    let mut xhtml_file_path = &oebps_path.join(&xhtml_path);
     // xml file
     File::create(xhtml_file_path).unwrap().write_all(&html.as_bytes());
 
     items.items.push(
         Item {
-            href: xhtml.file_name().unwrap().to_str().unwrap().to_string(),
+            href: xhtml_path.file_name().unwrap().to_str().unwrap().to_string(),
             ..Item::default()
         }
     )
