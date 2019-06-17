@@ -3,9 +3,13 @@ name = "repub"
 version = "0.1.0"
 authors = [" <crome110mine@gmail.com>"]
 edition = "2018"
+description = "convert markdown(s) to epub"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 comrak = "0.6"
 xml-rs = "0.8"
+clap = "2"
+rand = "0.6"
+chrono = "0.4"
