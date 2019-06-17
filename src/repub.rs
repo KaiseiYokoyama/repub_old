@@ -438,6 +438,11 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: 
     let mut md = String::new();
     md_file.read_to_string(&mut md);
     // convert
+    let mut comrak_options = ComrakOptions {
+        ext_header_ids: Some("header-".to_string()),
+        hardbreaks: true,
+        ..ComrakOptions::default()
+    };
     let html = format!("<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
 <head>\n\
 <meta charset=\"utf-8\" />\n\
@@ -446,7 +451,7 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: 
 </head>\n\
 <body>\n{}\n</body>\n</html>",
                        if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
-                       , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &ComrakOptions::default()));
+                       , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &comrak_options));
 
     let xhtml = format!("<?xml version='1.0' encoding='utf-8'?>\n\
 <!DOCTYPE html>\n\
