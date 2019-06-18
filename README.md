@@ -1,22 +1,40 @@
 # repub
 markdownをepub 3.0.1形式に変換します
 
+## example
+- convert `.md` file to `.epub`
+```bash
+repub markdown.md
+```
+
+- convert `.md` files in directory to `.epub`
+```bash
+repub markdown_directory
+```
+
+- convert with `.css` file
+```bash
+repub -s custom.css markdown_directory
+```
+
 ## usage
 ```
 repub 0.1.0
 convert markdown(s) to epub
 
 USAGE:
-    repub [OPTIONS] <input>
+    repub [FLAGS] [OPTIONS] <input>
 
 FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
+    -h, --help        Prints help information
+    -V, --version     Prints version information
+    -v, --vertical    縦書き
 
 OPTIONS:
     -i, --bookid <book_id>       Book ID
     -c, --creator <creator>      作者、編集者、翻訳者など
     -l, --language <language>    言語
+    -s, --css <style>            cssを指定
     -t, --title <title>          タイトルを設定
 
 ARGS:
@@ -24,20 +42,5 @@ ARGS:
 ```
 
 ## zipping
-`repub`コマンドによって、`title-repub`フォルダが生成されたとします。
-ここから、`sample.epub`ファイルを仕立てる手順は以下のとおりです。
-
-```bash
-// title-repubフォルダに移動
-cd title-repub
-
-// mimetypeファイルを無圧縮でzipの先頭に
-zip -x0q sample.epub mimetype
-
-// OEBPSフォルダをzipに追加
-zip -Xr9Dq sample.epub OEBPS/*
-
-// META-INFフォルダをzipに追加
-zip -Xr9Dq sample.epub META-INF/*
-```
-
+MacOSでは、プログラムがzipコマンドを実行して`.epub` ファイルを生成します。
+Windows環境ではプログラムによる`.epub`ファイルの生成は行われませんので、`epubpack`などを使用してください。
