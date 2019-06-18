@@ -46,7 +46,8 @@ fn main() -> Result<(), ()> {
         .arg(Arg::with_name("style")
             .help("cssを指定")
             .short("s")
-            .long("css"))
+            .long("css")
+            .takes_value(true))
         ;
 
     let matches = app.get_matches();
