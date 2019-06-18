@@ -224,35 +224,43 @@ impl RepubBuilder {
         self
     }
 
-    pub fn build(&self) {
-        let souce_file_path = &self.source_file;
-        let mut dir_path = PathBuf::from(".");
-
-        // unzipされたファイルの一時置き場所
-//        std::fs::create_dir_all(&dir_path);
-
-        // mimetypeファイル設置
-        let mimetype_path = &dir_path.join("mimetype");
+    /// mimetypeファイルを配置する
+    fn add_mimetype(&self, dir_path: &PathBuf) -> PathBuf {
+        // pathを作成
+        let mimetype_path = dir_path.join("mimetype");
+        // ファイルを作成
         let mut mimetype = File::create(&mimetype_path).unwrap();
+        // 書き込み
         mimetype.write_all("application/epub+zip".as_bytes()).unwrap();
 
-        // META-INFフォルダ設置
-        let meta_inf = &dir_path.join("META-INF");
+        return mimetype_path;
+    }
+
+    /// META-INFフォルダを配置する
+    fn add_meta_inf(&self, dir_path: &PathBuf) -> PathBuf {
+        // META-INFフォルダのpathを作成
+        let meta_inf = dir_path.join("META-INF");
+        // フォルダを作成
         std::fs::create_dir_all(&meta_inf);
 
-        // container.xml設置
+        // container.xmlを作成
         let mut container = File::create(
-            &dir_path.join("META-INF")
-                .join("container.xml")).unwrap();
-        container.write_all("<?xml version =\"1.0\" ?>\
-<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\
-  <rootfiles>\
-    <rootfile full-path=\"OEBPS/package.opf\" media-type=\"application/oebps-package+xml\" />\
-  </rootfiles>\
+            meta_inf.join("container.xml")).unwrap();
+        // 書き込み
+        container.write_all("<?xml version =\"1.0\" ?>\n\
+<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n\
+  <rootfiles>\n\
+    <rootfile full-path=\"OEBPS/package.opf\" media-type=\"application/oebps-package+xml\" />\n\
+  </rootfiles>\n\
 </container>".as_bytes());
 
+        return meta_inf;
+    }
+
+    /// OEBPSフォルダを設置する
+    fn add_oebps(&self, dir_path: &PathBuf) -> PathBuf {
         // OEBPSフォルダ設置
-        let oebps_path = &dir_path.join("OEBPS");
+        let oebps_path = dir_path.join("OEBPS");
         std::fs::create_dir_all(&oebps_path);
 
         // スタイルフォルダ設置
@@ -263,6 +271,22 @@ impl RepubBuilder {
         let vertical_css_path = styles.join("vertical.css");
         let mut vertical_css = File::create(vertical_css_path).unwrap();
         vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes());
+
+        return oebps_path;
+    }
+
+    pub fn build(&self) {
+        let souce_file_path = &self.source_file;
+        let mut dir_path = PathBuf::from(".");
+
+        // mimetypeファイル設置
+        let mimetype_path = self.add_mimetype(&dir_path);
+
+        // META-INFフォルダ, container.xmlを設置
+        let meta_inf = self.add_meta_inf(&dir_path);
+
+        // OEBPSフォルダ, styleフォルダ, vertical.css設置
+        let oebps_path = self.add_oebps(&dir_path);
 
         // package.opf設置
         let mut package_opf = File::create(
@@ -281,18 +305,18 @@ impl RepubBuilder {
         let vertical = &self.vertical;
         let mut lis = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, oebps_path, &mut items, &mut lis, vertical.clone());
+            convert(souce_file_path, &oebps_path, &mut items, &mut lis, vertical.clone());
         } else {
             for entry in std::fs::read_dir(souce_file_path).unwrap() {
                 let entry = entry.unwrap();
                 let path = entry.path();
                 if "md" == path.extension().unwrap().to_str().unwrap() {
-                    convert(&path, oebps_path, &mut items, &mut lis, vertical.clone());
+                    convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
                 }
             }
         }
 
-        // package.ops書き込み
+        // package.opf書き込み
         let package = Package { metadata, items };
         package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes());
 
@@ -304,20 +328,20 @@ impl RepubBuilder {
             lis_html = format!("{}{}", lis_html, li);
         }
 
-        navigation_opf.write_all(&format!("<?xml version='1.0' encoding='utf-8'?>\
-<!DOCTYPE html>\
-<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\
-<head>\
-<meta charset=\"utf-8\" />\
-<title>目次</title>\
-{}\
-</head>\
-<body>\
-<nav epub:type=\"toc\">\
-<h1>目次</h1>\
-<ol>{}</ol>\
-</nav>\
-</body>\
+        navigation_opf.write_all(&format!("<?xml version='1.0' encoding='utf-8'?>\n\
+<!DOCTYPE html>\n\
+<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
+<head>\n\
+<meta charset=\"utf-8\" />\n\
+<title>目次</title>\n\
+{}\n\
+</head>\n\
+<body>\n\
+<nav epub:type=\"toc\">\n\
+<h1>目次</h1>\n\
+<ol>{}</ol>\n\
+</nav>\n\
+</body>\n\
 </html>", if self.vertical.clone() { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }, &lis_html).as_bytes());
 
         // mimetypeファイルの場所(相対パス)
@@ -415,14 +439,26 @@ use zip::CompressionMethod;
 use zip::result::ZipResult;
 
 /// domからheaderを読み取り、li要素のVecを返す
-/// todo headerにidをつける liとリンクする
 fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
     let header_selector = Selector::parse("h1,h2,h3").unwrap();
     let headers = dom.select(&header_selector);
 
     let mut lis: Vec<String> = Vec::new();
     for header in headers {
-        let li = format!("<li header=\"{}\">{}</li>", header.value().name(), header.inner_html());
+        // header text
+        let text = header.text().next().unwrap();
+        // idの有無を確認
+        let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
+            // idあり -> a要素
+            Some(id) => {
+                println!("{:?}", id);
+                format!("<li header=\"{}\"><a href=\"{}.xhtml#{}\">{}</a></li>", header.value().name(), filename, id.value().id().unwrap(), text)
+            }
+            // idなし -> span要素
+            None => {
+                format!("<li header=\"{}\"><span>{}</span></li>", header.value().name(), text)
+            }
+        };
         lis.push(li);
     }
 
