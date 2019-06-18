@@ -307,8 +307,15 @@ impl RepubBuilder {
         if souce_file_path.is_file() {
             convert(souce_file_path, &oebps_path, &mut items, &mut lis, vertical.clone());
         } else {
-            for entry in std::fs::read_dir(souce_file_path).unwrap() {
-                let entry = entry.unwrap();
+            // ディレクトリから中身一覧を取得
+            let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            // 並べ替え
+            entries.sort_by_key(|e| e.path());
+            // convert
+            for entry in entries {
                 let path = entry.path();
                 if "md" == path.extension().unwrap().to_str().unwrap() {
                     convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
@@ -451,7 +458,6 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
         let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
             // idあり -> a要素
             Some(id) => {
-                println!("{:?}", id);
                 format!("<li header=\"{}\"><a href=\"{}.xhtml#{}\">{}</a></li>", header.value().name(), filename, id.value().id().unwrap(), text)
             }
             // idなし -> span要素
