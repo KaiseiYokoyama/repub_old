@@ -1,6 +1,16 @@
 # repub
 markdownをepub 3.0.1形式に変換します
 
+## install
+```bash
+cargo install --git https://github.com/crome110/repub
+```
+
+### update
+```bash
+cargo install --force --git https://github.com/crome110/repub
+```
+
 ## example
 - convert `.md` file to `.epub`
 ```bash
