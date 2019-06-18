@@ -42,6 +42,11 @@ fn main() -> Result<(), ()> {
             .help("縦書き")
             .short("v")
             .long("vertical"))
+        // スタイル
+        .arg(Arg::with_name("style")
+            .help("cssを指定")
+            .short("s")
+            .long("css"))
         ;
 
     let matches = app.get_matches();
