@@ -8,6 +8,7 @@ use std::io::{Write, Read};
 #[derive(Debug)]
 pub struct RepubBuilder {
     source_file: PathBuf,
+    style: Option<PathBuf>,
     title: String,
     creator: String,
     language: String,
@@ -19,6 +20,7 @@ impl Default for RepubBuilder {
     fn default() -> Self {
         RepubBuilder {
             source_file: PathBuf::default(),
+            style: Option::default(),
             id: rand::thread_rng().sample_iter(&Alphanumeric).take(30).collect(),
             title: String::default(),
             creator: String::default(),
@@ -76,10 +78,11 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        return format!("<manifest>\n{}\n{}\n{}\n</manifest>",
+        return format!("<manifest>\n{}\n{}\n{}\n{}\n</manifest>",
                        "<item id=\"navigation\" href=\"navigation.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
                        items,
-                       "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>");
+                       "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>",
+                       "<item id=\"custom_css\" href=\"styles/custom.css\" media-type=\"text/css\"/>");
     }
 
     fn to_spine(&self, vertical: bool) -> String {
@@ -132,11 +135,12 @@ impl RepubBuilder {
     pub fn new(path: &Path, matches: &ArgMatches) -> Result<RepubBuilder, ()> {
         // 指定されたpathが絶対パスであったとき
         let file_path;
+        // コマンドの実行path
+        let origin = &std::env::current_dir().unwrap();
+
         if path.is_absolute() {
             file_path = path.to_path_buf();
         } else {
-            // コマンドの実行path
-            let origin = &std::env::current_dir().unwrap();
             // 指定されたディレクトリへのpath
             file_path = origin.join(path);
         }
@@ -201,6 +205,11 @@ impl RepubBuilder {
             repub_builder.language(language.trim());
         }
 
+        // css style
+        if let Some(css) = matches.value_of("style") {
+            repub_builder.style(origin.join(css));
+        }
+
         return Ok(repub_builder);
     }
 
@@ -216,6 +225,11 @@ impl RepubBuilder {
 
     pub fn language(&mut self, language: &str) -> &mut Self {
         self.language = language.to_string();
+        self
+    }
+
+    pub fn style(&mut self, style: PathBuf) -> &mut Self {
+        self.style = Some(style);
         self
     }
 
@@ -258,7 +272,7 @@ impl RepubBuilder {
     }
 
     /// OEBPSフォルダを設置する
-    fn add_oebps(&self, dir_path: &PathBuf) -> PathBuf {
+    fn add_oebps(&self, dir_path: &PathBuf) -> (PathBuf, PathBuf) {
         // OEBPSフォルダ設置
         let oebps_path = dir_path.join("OEBPS");
         std::fs::create_dir_all(&oebps_path);
@@ -272,7 +286,11 @@ impl RepubBuilder {
         let mut vertical_css = File::create(vertical_css_path).unwrap();
         vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes());
 
-        return oebps_path;
+        // custom style
+        let custom_css_path = styles.join("custom.css");
+        File::create(&custom_css_path).unwrap();
+
+        return (oebps_path, custom_css_path);
     }
 
     pub fn build(&self) {
@@ -286,7 +304,18 @@ impl RepubBuilder {
         let meta_inf = self.add_meta_inf(&dir_path);
 
         // OEBPSフォルダ, styleフォルダ, vertical.css設置
-        let oebps_path = self.add_oebps(&dir_path);
+        let (oebps_path, custom_css_path) = self.add_oebps(&dir_path);
+
+        // custom.cssに書き込み
+        if let Some(path) = &self.style {
+            // オリジナルのcssを読み取る
+            let mut css = String::new();
+            let mut original_css = File::open(path).unwrap();
+            original_css.read_to_string(&mut css);
+            // custom.cssに書き込み
+            let mut custom_css = File::create(custom_css_path).unwrap();
+            custom_css.write_all(css.as_bytes());
+        }
 
         // package.opf設置
         let mut package_opf = File::create(
@@ -493,10 +522,12 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: 
 <head>\n\
 <meta charset=\"utf-8\" />\n\
 {}\n\
+{}\n\
 <title>{}</title>\n\
 </head>\n\
 <body>\n{}\n</body>\n</html>",
                        if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
+                       , "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/custom.css\" />"
                        , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &comrak_options));
 
     let xhtml = format!("<?xml version='1.0' encoding='utf-8'?>\n\
