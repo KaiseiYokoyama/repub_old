@@ -346,9 +346,16 @@ impl RepubBuilder {
             // convert
             for entry in entries {
                 let path = entry.path();
-                if "md" == path.extension().unwrap().to_str().unwrap() {
-                    convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
+                if let Some(ext_os) = path.extension() {
+                    if let Some(ext) = ext_os.to_str() {
+                        if ext == "md" {
+                            convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
+                        }
+                    }
                 }
+//                if "md" == path.extension().unwrap().to_str().unwrap() {
+//                    convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
+//                }
             }
         }
 
