@@ -389,11 +389,6 @@ impl RepubBuilder {
 
 //        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
         self.make_with_command(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
-
-        // delete files
-        std::fs::remove_file(&mimetype_path.as_path());
-        std::fs::remove_dir_all(&meta_inf_path.as_path());
-        std::fs::remove_dir_all(&oebps_path.as_path());
     }
 
     /// zip前のフォルダのpathから.epubを生成する
@@ -463,6 +458,11 @@ impl RepubBuilder {
                 .arg(epubname)
                 .arg(oebps.to_str().unwrap())
                 .output().expect("Missed zip OEBPS");
+
+            // delete files
+            std::fs::remove_file(&mimetype.as_path());
+            std::fs::remove_dir_all(&meta_inf.as_path());
+            std::fs::remove_dir_all(&oebps.as_path());
         }
     }
 }
