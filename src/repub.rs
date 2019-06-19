@@ -14,6 +14,7 @@ pub struct RepubBuilder {
     language: String,
     id: String,
     vertical: bool,
+    toc_level: usize,
 }
 
 impl Default for RepubBuilder {
@@ -26,6 +27,7 @@ impl Default for RepubBuilder {
             creator: String::default(),
             language: String::default(),
             vertical: false,
+            toc_level: 2,
         }
     }
 }
@@ -210,6 +212,17 @@ impl RepubBuilder {
             repub_builder.style(origin.join(css));
         }
 
+        // toc_level
+        if let Some(level) = matches.value_of("toc_level") {
+            repub_builder.toc_level = match level.parse::<usize>() {
+                Ok(ok) => ok - 1,
+                Err(_) => {
+                    println!("Warning {} は目次のレベルに設定できません", &level);
+                    2
+                }
+            };
+        }
+
         return Ok(repub_builder);
     }
 
@@ -334,7 +347,7 @@ impl RepubBuilder {
         let vertical = &self.vertical;
         let mut lis = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, &oebps_path, &mut items, &mut lis, vertical.clone());
+            convert(souce_file_path, &oebps_path, &mut items, &mut lis, vertical.clone(), self.toc_level.clone());
         } else {
             // ディレクトリから中身一覧を取得
             let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)
@@ -349,7 +362,7 @@ impl RepubBuilder {
                 if let Some(ext_os) = path.extension() {
                     if let Some(ext) = ext_os.to_str() {
                         if ext == "md" {
-                            convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
+                            convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone(), self.toc_level.clone());
                         }
                     }
                 }
@@ -482,8 +495,10 @@ use zip::CompressionMethod;
 use zip::result::ZipResult;
 
 /// domからheaderを読み取り、li要素のVecを返す
-fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
-    let header_selector = Selector::parse("h1,h2,h3").unwrap();
+fn toc_from_dom(dom: Html, filename: &str, level: usize) -> Vec<String> {
+    let header_selector_vec = vec!["h1", "h2", "h3", "h4", "h5"];
+    let header_selector_str = header_selector_vec[..std::cmp::min(level, 5)+1].join(",");
+    let header_selector = Selector::parse(&header_selector_str).unwrap();
     let headers = dom.select(&header_selector);
 
     let mut lis: Vec<String> = Vec::new();
@@ -510,7 +525,7 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
     return lis;
 }
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: &mut Vec<String>, vertical: bool) {
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: &mut Vec<String>, vertical: bool, level: usize) {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
@@ -546,7 +561,7 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: 
 
     // toc
     let dom = Html::parse_document(&html);
-    lis.append(&mut toc_from_dom(dom, &name));
+    lis.append(&mut toc_from_dom(dom, &name, level));
 
     // xml path
     let mut xhtml_path = PathBuf::from(name);

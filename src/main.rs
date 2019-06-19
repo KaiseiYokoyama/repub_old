@@ -51,7 +51,7 @@ fn main() -> Result<(), ()> {
         // tocに乗せるヘッダーのレベル
         .arg(Arg::with_name("toc_level")
             .help("目次に表示するHeaderの最低レベル")
-            .short("tl")
+            .short("h")
             .takes_value(true))
         ;
 
