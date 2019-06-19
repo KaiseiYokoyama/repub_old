@@ -494,8 +494,7 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<String> {
         let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
             // idあり -> a要素
             Some(id) => {
-                format!("<li header=\"{}\"><a href=\"{}.xhtml#{}\">{}</a></li>",
-                        header.value().name(),
+                format!("<li><a href=\"{}.xhtml#{}\">{}</a></li>",
                         filename,
                         id.value().id().unwrap_or("UNWRAP ERROR: HEADER ID"),
                         text)
