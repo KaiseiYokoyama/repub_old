@@ -48,6 +48,11 @@ fn main() -> Result<(), ()> {
             .short("s")
             .long("css")
             .takes_value(true))
+        // tocに乗せるヘッダーのレベル
+        .arg(Arg::with_name("toc_level")
+            .help("目次に表示するHeaderの最低レベル")
+            .short("tl")
+            .takes_value(true))
         ;
 
     let matches = app.get_matches();
