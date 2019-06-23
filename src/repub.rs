@@ -14,7 +14,7 @@ pub struct RepubBuilder {
     language: String,
     id: String,
     vertical: bool,
-    toc_level: usize,
+    toc_level: u8,
 }
 
 impl Default for RepubBuilder {
@@ -132,6 +132,177 @@ impl Item {
     }
 }
 
+
+trait ToCTrait {
+    fn get_inner_items(&mut self) -> &mut Vec<ToCItem>;
+
+    fn get_latest(&mut self, level: u8) -> &mut ToCItem;
+
+    fn push(&mut self, toc_item: ToCItem) {
+        self.get_inner_items().push(toc_item);
+    }
+}
+
+/// 目次の要素のひとつ
+#[derive(Debug)]
+struct ToCItem {
+    is_dummy: bool,
+    filename: String,
+    id: Option<String>,
+    title: String,
+    level: u8,
+    inner_items: Vec<ToCItem>,
+}
+
+impl Default for ToCItem {
+    fn default() -> Self {
+        ToCItem {
+            is_dummy: true,
+            filename: String::new(),
+            id: None,
+            title: String::new(),
+            level: 1,
+            inner_items: Vec::new(),
+        }
+    }
+}
+
+impl ToCTrait for ToCItem {
+    fn get_inner_items(&mut self) -> &mut Vec<ToCItem> {
+        &mut self.inner_items
+    }
+
+    fn get_latest(&mut self, level: u8) -> &mut ToCItem {
+        if level == 1 { return self; }
+
+        let inner_items = self.get_inner_items();
+        let toc_item = if inner_items.len() == 0 {
+            // initialize
+            inner_items.push(ToCItem::default());
+            inner_items[0].borrow_mut()
+        } else {
+            inner_items.last_mut().unwrap()
+        };
+
+        toc_item.get_latest(level - 1)
+    }
+}
+
+impl ToCItem {
+    /// xhtml化
+    fn to_nav(&self, level: u8) -> String {
+        println!("{:?}", &self);
+        let title = if self.is_dummy {
+            String::new()
+        } else {
+            match &self.id {
+                Some(id) => {
+                    format!("<a href=\"{}.xhtml#{}\">{}</a>", &self.filename, id, &self.title)
+                }
+                None => {
+                    format!("<span>{}</span>", &self.title)
+                }
+            }
+        };
+        let inners: Vec<String> =
+            self.inner_items
+                .iter()
+                .map(|a| a.to_nav(level)).collect();
+        let inners_xhtml = if inners.is_empty() {
+            String::new()
+        } else {
+            if self.level >= level {
+                format!("<ol hidden=\"hidden\">{}</ol>", inners.join(""))
+            } else {
+                format!("<ol>{}</ol>", inners.join(""))
+            }
+        };
+
+        return format!("<li>\n{}\n{}\n</li>\n", &title, &inners_xhtml);
+    }
+}
+
+/// 目次そのもの
+#[derive(Default)]
+struct ToC {
+    inner_items: Vec<ToCItem>
+}
+
+impl ToCTrait for ToC {
+    fn get_inner_items(&mut self) -> &mut Vec<ToCItem> {
+        &mut self.inner_items
+    }
+
+    fn get_latest(&mut self, level: u8) -> &mut ToCItem {
+        let inner_items = self.get_inner_items();
+        let toc_item = if inner_items.len() == 0 {
+            // initialize
+            inner_items.push(ToCItem::default());
+            inner_items[0].borrow_mut()
+        } else {
+            inner_items.last_mut().unwrap()
+        };
+
+        toc_item.get_latest(level)
+    }
+}
+
+impl ToC {
+    fn new(toc_items: Vec<ToCItem>, level: u8) -> Self {
+        let mut origin = ToC::default();
+
+        for toc_item in toc_items {
+            let level = toc_item.level;
+            origin.push(toc_item, level);
+        }
+
+        // return
+        origin
+    }
+
+    fn push(&mut self, toc_item: ToCItem, level: u8) {
+        if level == 1 {
+            self.inner_items.push(toc_item);
+        } else {
+            self.get_latest(level - 1).push(toc_item);
+        }
+    }
+
+    fn to_nav(&self, level: u8, vertical: bool, title: Option<String>) -> String {
+        let inners: Vec<String> =
+            self.inner_items
+                .iter()
+                .map(|a| a.to_nav(level)).collect();
+        let inners_xhtml = if inners.is_empty() {
+            String::new()
+        } else {
+            inners.join("")
+        };
+        let title = title.unwrap_or(String::new());
+        format!("<?xml version='1.0' encoding='utf-8'?>\n\
+<!DOCTYPE html>\n\
+<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
+<head>\n\
+<meta charset=\"utf-8\" />\n\
+<title>{}</title>\n\
+{}\n\
+</head>\n\
+<body>\n\
+<nav epub:type=\"toc\">\n\
+<h1>{}</h1>\n\
+<ol>{}</ol>\n\
+</nav>\n\
+</body>\n\
+</html>",
+                &title,
+                if vertical {
+                    "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />"
+                } else { "" },
+                &title,
+                &inners_xhtml)
+    }
+}
+
 impl RepubBuilder {
     /// 絶対パス、あるいは相対パスでソースを指定してRepubBuilderを得る
     pub fn new(path: &Path, matches: &ArgMatches) -> Result<RepubBuilder, ()> {
@@ -214,7 +385,7 @@ impl RepubBuilder {
 
         // toc_level
         if let Some(level) = matches.value_of("toc_level") {
-            repub_builder.toc_level = match level.parse::<usize>() {
+            repub_builder.toc_level = match level.parse::<u8>() {
                 Ok(ok) => ok - 1,
                 Err(_) => {
                     println!("Warning {} は目次のレベルに設定できません", &level);
@@ -345,9 +516,9 @@ impl RepubBuilder {
 
         // ファイル読み込み&変換
         let vertical = &self.vertical;
-        let mut lis = Vec::new();
+        let mut toc_items = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, &oebps_path, &mut items, &mut lis, vertical.clone(), self.toc_level.clone());
+            convert(souce_file_path, &oebps_path, &mut items, &mut toc_items, vertical.clone());
         } else {
             // ディレクトリから中身一覧を取得
             let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)
@@ -362,7 +533,7 @@ impl RepubBuilder {
                 if let Some(ext_os) = path.extension() {
                     if let Some(ext) = ext_os.to_str() {
                         if ext == "md" {
-                            convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone(), self.toc_level.clone());
+                            convert(&path, &oebps_path, &mut items, &mut toc_items, vertical.clone());
                         }
                     }
                 }
@@ -379,26 +550,10 @@ impl RepubBuilder {
         // navigation.opf作成
         let mut navigation_opf = File::create(
             &oebps_path.join("navigation.xhtml")).unwrap();
-        let mut lis_html = String::new();
-        for li in lis {
-            lis_html = format!("{}{}", lis_html, li);
-        }
+        let toc = ToC::new(toc_items, self.toc_level);
+        println!("toc_level:{}", self.toc_level);
 
-        navigation_opf.write_all(&format!("<?xml version='1.0' encoding='utf-8'?>\n\
-<!DOCTYPE html>\n\
-<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
-<head>\n\
-<meta charset=\"utf-8\" />\n\
-<title>目次</title>\n\
-{}\n\
-</head>\n\
-<body>\n\
-<nav epub:type=\"toc\">\n\
-<h1>目次</h1>\n\
-<ol>{}</ol>\n\
-</nav>\n\
-</body>\n\
-</html>", if self.vertical.clone() { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }, &lis_html).as_bytes());
+        navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes());
 
         // mimetypeファイルの場所(相対パス)
         let mimetype_path = dir_path.join("mimetype");
@@ -493,39 +648,72 @@ use std::collections::HashSet;
 use std::error::Error;
 use zip::CompressionMethod;
 use zip::result::ZipResult;
+use core::borrow::BorrowMut;
 
 /// domからheaderを読み取り、li要素のVecを返す
-fn toc_from_dom(dom: Html, filename: &str, level: usize) -> Vec<String> {
-    let header_selector_vec = vec!["h1", "h2", "h3", "h4", "h5"];
-    let header_selector_str = header_selector_vec[..std::cmp::min(level, 5)+1].join(",");
-    let header_selector = Selector::parse(&header_selector_str).unwrap();
+fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
+//    let header_selector_vec = vec!["h1", "h2", "h3", "h4", "h5"];
+//    let header_selector_str = header_selector_vec[..std::cmp::min(level, 5) + 1].join(",");
+    let header_selector = Selector::parse("h1,h2,h3,h4,h5").unwrap();
     let headers = dom.select(&header_selector);
 
-    let mut lis: Vec<String> = Vec::new();
-    for header in headers {
+//    let mut lis: Vec<String> = Vec::new();
+//    for header in headers {
+//        // header text
+//        let text = header.text().next().unwrap_or("UNWRAP ERROR: HEADER TEXT");
+//        // idの有無を確認
+//        let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
+//            // idあり -> a要素
+//            Some(id) => {
+//                format!("<li><a href=\"{}.xhtml#{}\">{}</a></li>",
+//                        filename,
+//                        id.value().id().unwrap_or("UNWRAP ERROR: HEADER ID"),
+//                        text)
+//            }
+//            // idなし -> span要素
+//            None => {
+//                format!("<li header=\"{}\"><span>{}</span></li>", header.value().name(), text)
+//            }
+//        };
+//        lis.push(li);
+//    }
+    let toc_items: Vec<ToCItem> = headers.map(|header| {
         // header text
-        let text = header.text().next().unwrap_or("UNWRAP ERROR: HEADER TEXT");
-        // idの有無を確認
-        let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
+        let title = header.text().next().map_or(String::from("UNWRAP ERROR: HEADER TEXT"), |text| text.to_string());
+        let level = match header.value().name()[1..].parse::<u8>() {
+            Ok(level) => level,
+            Err(_) => 6,
+        };
+        match header.select(&Selector::parse("a[id]").unwrap()).next() {
             // idあり -> a要素
             Some(id) => {
-                format!("<li><a href=\"{}.xhtml#{}\">{}</a></li>",
-                        filename,
-                        id.value().id().unwrap_or("UNWRAP ERROR: HEADER ID"),
-                        text)
+                let id = id.value().id().map(|id| id.to_string());
+                ToCItem {
+                    is_dummy: false,
+                    filename: filename.to_string(),
+                    id,
+                    title,
+                    level,
+                    ..ToCItem::default()
+                }
             }
             // idなし -> span要素
             None => {
-                format!("<li header=\"{}\"><span>{}</span></li>", header.value().name(), text)
+                ToCItem {
+                    is_dummy: false,
+                    filename: filename.to_string(),
+                    title,
+                    level,
+                    ..ToCItem::default()
+                }
             }
-        };
-        lis.push(li);
-    }
+        }
+    }).collect();
 
-    return lis;
+    return toc_items;
 }
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: &mut Vec<String>, vertical: bool, level: usize) {
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_items: &mut Vec<ToCItem>, vertical: bool) {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
@@ -561,7 +749,7 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, lis: 
 
     // toc
     let dom = Html::parse_document(&html);
-    lis.append(&mut toc_from_dom(dom, &name, level));
+    toc_items.append(&mut toc_from_dom(dom, &name));
 
     // xml path
     let mut xhtml_path = PathBuf::from(name);
