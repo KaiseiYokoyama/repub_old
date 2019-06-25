@@ -2,7 +2,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use rand::Rng;
 use rand::distributions::Alphanumeric;
-use clap::{App, ArgMatches};
+use clap::ArgMatches;
 use std::io::{Write, Read};
 
 #[derive(Debug)]
@@ -217,7 +217,7 @@ impl ToCItem {
             }
         };
 
-        return format!("<li>\n{}\n{}\n</li>\n", &title, &inners_xhtml);
+        format!("<li>\n{}\n{}\n</li>\n", &title, &inners_xhtml)
     }
 }
 
@@ -247,7 +247,7 @@ impl ToCTrait for ToC {
 }
 
 impl ToC {
-    fn new(toc_items: Vec<ToCItem>, level: u8) -> Self {
+    fn new(toc_items: Vec<ToCItem>) -> Self {
         let mut origin = ToC::default();
 
         for toc_item in toc_items {
@@ -377,6 +377,11 @@ impl RepubBuilder {
             repub_builder.language(language.trim());
         }
 
+        if let Some(id) = matches.value_of("book_id") {
+            println!("Book ID: {}", id);
+            repub_builder.book_id(id);
+        }
+
         // css style
         if let Some(css) = matches.value_of("style") {
             repub_builder.style(origin.join(css));
@@ -393,7 +398,7 @@ impl RepubBuilder {
             };
         }
 
-        return Ok(repub_builder);
+        Ok(repub_builder)
     }
 
     pub fn titled(&mut self, title: &str) -> &mut Self {
@@ -430,7 +435,7 @@ impl RepubBuilder {
         // 書き込み
         mimetype.write_all("application/epub+zip".as_bytes()).unwrap();
 
-        return mimetype_path;
+        mimetype_path
     }
 
     /// META-INFフォルダを配置する
@@ -451,7 +456,7 @@ impl RepubBuilder {
   </rootfiles>\n\
 </container>".as_bytes());
 
-        return meta_inf;
+        meta_inf
     }
 
     /// OEBPSフォルダを設置する
@@ -473,15 +478,15 @@ impl RepubBuilder {
         let custom_css_path = styles.join("custom.css");
         File::create(&custom_css_path).unwrap();
 
-        return (oebps_path, custom_css_path);
+        (oebps_path, custom_css_path)
     }
 
     pub fn build(&self) {
         let souce_file_path = &self.source_file;
-        let mut dir_path = PathBuf::from(".");
+        let dir_path = PathBuf::from(".");
 
         // mimetypeファイル設置
-        let mimetype_path = self.add_mimetype(&dir_path);
+        self.add_mimetype(&dir_path);
 
         // META-INFフォルダ, container.xmlを設置
         let meta_inf = self.add_meta_inf(&dir_path);
@@ -549,7 +554,7 @@ impl RepubBuilder {
         // navigation.opf作成
         let mut navigation_opf = File::create(
             &oebps_path.join("navigation.xhtml")).unwrap();
-        let toc = ToC::new(toc_items, self.toc_level);
+        let toc = ToC::new(toc_items);
 
         navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes());
 
@@ -566,13 +571,12 @@ impl RepubBuilder {
 
     /// zip前のフォルダのpathから.epubを生成する
     fn make(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
-        use std::io::{Seek, Write};
-        use zip::result::ZipResult;
+        //        use zip::result::ZipResult;
         use zip::write::{FileOptions, ZipWriter};
 
         let epub_path = format!("{}.epub", &self.title);
-        let mut epub_path = dir_path.join(&epub_path);
-        let mut epub = match File::create(&epub_path) {
+        let epub_path = dir_path.join(&epub_path);
+        let epub = match File::create(&epub_path) {
             Ok(file) => {
                 file
             }
@@ -607,7 +611,7 @@ impl RepubBuilder {
 
         writer.finish()?;
 
-        return Ok(());
+        Ok(())
     }
 
     /// zip前のフォルダのpathからコマンドを用いて.epubを生成する
@@ -650,31 +654,9 @@ use core::borrow::BorrowMut;
 
 /// domからheaderを読み取り、li要素のVecを返す
 fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
-//    let header_selector_vec = vec!["h1", "h2", "h3", "h4", "h5"];
-//    let header_selector_str = header_selector_vec[..std::cmp::min(level, 5) + 1].join(",");
     let header_selector = Selector::parse("h1,h2,h3,h4,h5").unwrap();
     let headers = dom.select(&header_selector);
 
-//    let mut lis: Vec<String> = Vec::new();
-//    for header in headers {
-//        // header text
-//        let text = header.text().next().unwrap_or("UNWRAP ERROR: HEADER TEXT");
-//        // idの有無を確認
-//        let li = match header.select(&Selector::parse("a[id]").unwrap()).next() {
-//            // idあり -> a要素
-//            Some(id) => {
-//                format!("<li><a href=\"{}.xhtml#{}\">{}</a></li>",
-//                        filename,
-//                        id.value().id().unwrap_or("UNWRAP ERROR: HEADER ID"),
-//                        text)
-//            }
-//            // idなし -> span要素
-//            None => {
-//                format!("<li header=\"{}\"><span>{}</span></li>", header.value().name(), text)
-//            }
-//        };
-//        lis.push(li);
-//    }
     let toc_items: Vec<ToCItem> = headers.map(|header| {
         // header text
         let title = header.text().next().map_or(String::from("UNWRAP ERROR: HEADER TEXT"), |text| text.to_string());
@@ -708,7 +690,7 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
         }
     }).collect();
 
-    return toc_items;
+    toc_items
 }
 
 fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_items: &mut Vec<ToCItem>, vertical: bool) {
@@ -761,5 +743,5 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
             href: xhtml_path.file_name().unwrap().to_str().unwrap().to_string(),
             ..Item::default()
         }
-    )
+    );
 }

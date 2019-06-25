@@ -6,7 +6,7 @@ mod repub;
 extern crate clap;
 
 fn main() -> Result<(), ()> {
-    use clap::{App, Arg, SubCommand};
+    use clap::{App, Arg};
     let app = App::new(crate_name!())
         .version(crate_version!())
         .author(crate_authors!())
@@ -57,7 +57,7 @@ fn main() -> Result<(), ()> {
 
     let matches = app.get_matches();
 
-    let mut repub_builder = repub::RepubBuilder::new(
+    let repub_builder = repub::RepubBuilder::new(
         Path::new(&matches.value_of("input").unwrap()), &matches)?;
 
     repub_builder.build();
