@@ -15,6 +15,10 @@ fn main() {
         .about(crate_description!())
         // .mdファイルorフォルダ
         .arg(Arg::from_usage("<input> '変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ'"))
+        // 一時ファイルを消さない
+        .arg(Arg::with_name("save_tmp_files")
+            .help("一時ファイルを消去せずそのままにする")
+            .long("save"))
         // タイトル
         .arg(Arg::with_name("title")
             .help("タイトルを設定")

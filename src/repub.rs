@@ -18,7 +18,7 @@ pub struct TmpFiles {
 #[derive(Debug)]
 pub struct RepubBuilder {
     source_file: PathBuf,
-    unzipped_files: TmpFiles,
+    tmp_files: TmpFiles,
     style: Option<PathBuf>,
     title: String,
     creator: String,
@@ -26,13 +26,14 @@ pub struct RepubBuilder {
     id: String,
     vertical: bool,
     toc_level: u8,
+    save_tmp_files: bool,
 }
 
 impl Default for RepubBuilder {
     fn default() -> Self {
         RepubBuilder {
             source_file: PathBuf::default(),
-            unzipped_files: TmpFiles::default(),
+            tmp_files: TmpFiles::default(),
             style: Option::default(),
             id: rand::thread_rng().sample_iter(&Alphanumeric).take(30).collect(),
             title: String::default(),
@@ -40,6 +41,7 @@ impl Default for RepubBuilder {
             language: String::default(),
             vertical: false,
             toc_level: 2,
+            save_tmp_files: false,
         }
     }
 }
@@ -344,6 +346,7 @@ impl RepubBuilder {
         let mut repub_builder = RepubBuilder {
             source_file: md_path,
             vertical: matches.is_present("vertical"),
+            save_tmp_files: matches.is_present("save_tmp_files"),
             ..RepubBuilder::default()
         };
 
@@ -440,7 +443,7 @@ impl RepubBuilder {
         // 書き込み
         mimetype.write_all(include_str!("literals/mimetype").as_bytes())?;
 
-        self.unzipped_files.mimetype = Some(mimetype_path);
+        self.tmp_files.mimetype = Some(mimetype_path);
 
         Ok(())
     }
@@ -458,7 +461,7 @@ impl RepubBuilder {
         // 書き込み
         container.write_all(include_str!("literals/container.xml").as_bytes())?;
 
-        self.unzipped_files.meta_inf = Some(meta_inf);
+        self.tmp_files.meta_inf = Some(meta_inf);
 
         Ok(())
     }
@@ -483,22 +486,30 @@ impl RepubBuilder {
         let custom_css_path = styles.join("custom.css");
         File::create(&custom_css_path)?;
 
-        self.unzipped_files.oebps = Some(oebps_path);
+        self.tmp_files.oebps = Some(oebps_path);
         Ok(custom_css_path)
     }
 
     /// .epubファイルを生成する
     /// 生成に失敗したようなら、unzippedなゴミを片付ける
     pub fn build(&mut self) -> Result<(), failure::Error> {
-        match self.build_core() {
+        let res = match self.build_core() {
             // failed
             Err(e) => {
-                self.remove_tmp_files();
                 Err(e)
             }
             // succeeded
-            Ok(ok) => Ok(ok)
+            Ok(ok) => {
+                Ok(ok)
+            }
+        };
+
+        if !self.save_tmp_files {
+            // ファイル削除
+            self.remove_tmp_files();
         }
+
+        res
     }
 
     /// 一時ファイルを削除する
@@ -506,7 +517,7 @@ impl RepubBuilder {
         // pathを変数に代入
         let TmpFiles {
             mimetype, meta_inf, oebps
-        } = &self.unzipped_files;
+        } = &self.tmp_files;
 
         // 存在すれば削除
         // エラーを拾ったときにもゴミ掃除をしたいので、エラー次第ではどれかが存在しないこともありうる
@@ -529,7 +540,7 @@ impl RepubBuilder {
         // OEBPSフォルダ, styleフォルダ, vertical.css設置
         let custom_css_path = self.add_oebps(&dir_path)?;
 
-        let (mimetype, meta_inf, oebps_path) = match &self.unzipped_files {
+        let (mimetype, meta_inf, oebps_path) = match &self.tmp_files {
             TmpFiles {
                 mimetype: Some(mimetype),
                 meta_inf: Some(meta_inf),
@@ -681,8 +692,6 @@ impl RepubBuilder {
                 .output().expect("Missed zip OEBPS");
         }
 
-        // ファイル削除
-        self.remove_tmp_files();
         Ok(())
     }
 }
