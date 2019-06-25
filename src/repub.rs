@@ -9,7 +9,7 @@ use failure::ResultExt;
 
 /// epubに格納予定のファイル
 #[derive(Default, Debug)]
-pub struct EpubFiles {
+pub struct TmpFiles {
     mimetype: Option<PathBuf>,
     meta_inf: Option<PathBuf>,
     oebps: Option<PathBuf>,
@@ -18,7 +18,7 @@ pub struct EpubFiles {
 #[derive(Debug)]
 pub struct RepubBuilder {
     source_file: PathBuf,
-    unzipped_files: EpubFiles,
+    unzipped_files: TmpFiles,
     style: Option<PathBuf>,
     title: String,
     creator: String,
@@ -32,7 +32,7 @@ impl Default for RepubBuilder {
     fn default() -> Self {
         RepubBuilder {
             source_file: PathBuf::default(),
-            unzipped_files: EpubFiles::default(),
+            unzipped_files: TmpFiles::default(),
             style: Option::default(),
             id: rand::thread_rng().sample_iter(&Alphanumeric).take(30).collect(),
             title: String::default(),
@@ -69,13 +69,13 @@ impl<'a> MetaData<'a> {
     fn to_xml(&self) -> String {
         use chrono::prelude::*;
 
-        return format!("<metadata>\n\
+        format!("<metadata>\n\
 <dc:title>{}</dc:title>\n\
 <dc:language>{}</dc:language>\n\
 <dc:creator>{}</dc:creator>\n\
 <dc:identifier id=\"BookId\">{}</dc:identifier>\n\
 <meta property=\"dcterms:modified\">{}</meta>\n\
-</metadata>\n", &self.title, &self.language, &self.creator, &self.id, Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string().replace("\"", ""));
+</metadata>\n", &self.title, &self.language, &self.creator, &self.id, Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string().replace("\"", ""))
     }
 }
 
@@ -92,11 +92,11 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        return format!("<manifest>\n{}\n{}\n{}\n{}\n</manifest>",
-                       "<item id=\"navigation\" href=\"navigation.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
-                       items,
-                       "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>",
-                       "<item id=\"custom_css\" href=\"styles/custom.css\" media-type=\"text/css\"/>");
+        format!("<manifest>\n{}\n{}\n{}\n{}\n</manifest>",
+                "<item id=\"navigation\" href=\"navigation.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
+                items,
+                "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>",
+                "<item id=\"custom_css\" href=\"styles/custom.css\" media-type=\"text/css\"/>")
     }
 
     fn to_spine(&self, vertical: bool) -> String {
@@ -106,14 +106,14 @@ impl Items {
             items = format!("{}{}\n", items, item.to_spine(i));
         }
 
-        return if vertical {
+        if vertical {
             // 縦書き->右綴じ
             format!("<spine page-progression-direction=\"rtl\">\n{}\n{}</spine>\n",
                     "<itemref idref=\"navigation\" />",
                     items)
         } else {
             format!("<spine>\n{}\n{}</spine>\n", "<itemref idref=\"navigation\" />", items)
-        };
+        }
     }
 }
 
@@ -267,7 +267,6 @@ impl ToC {
             origin.push(toc_item, level);
         }
 
-        // return
         origin
     }
 
@@ -317,37 +316,35 @@ impl ToC {
 impl RepubBuilder {
     /// 絶対パス、あるいは相対パスでソースを指定してRepubBuilderを得る
     pub fn new(path: &Path, matches: &ArgMatches) -> Result<RepubBuilder, failure::Error> {
-        // 指定されたpathが絶対パスであったとき
-        let file_path;
         // コマンドの実行path
         let origin = &std::env::current_dir()?;
 
-        if path.is_absolute() {
-            file_path = path.to_path_buf();
+        let md_path = if path.is_absolute() {
+            path.to_path_buf()
         } else {
             // 指定されたディレクトリへのpath
-            file_path = origin.join(path);
-        }
+            origin.join(path)
+        };
 
         // 存在しないpath
-        if !file_path.exists() {
-            return Err(format_err!("[ERROR] {:?} does not exist.", &file_path));
+        if !md_path.exists() {
+            return Err(format_err!("[ERROR] {:?} does not exist.", &md_path));
         }
 
         // .mdファイルorディレクトリではない
-        if file_path.is_file() {
-            match file_path.extension() {
+        if md_path.is_file() {
+            match md_path.extension() {
                 None => {}
                 Some(ext) => {
                     if ext != "md" {
-                        return Err(format_err!("[ERROR] {:?} is not .md file.", &file_path));
+                        return Err(format_err!("[ERROR] {:?} is not .md file.", &md_path));
                     }
                 }
             }
         }
 
         let mut repub_builder = RepubBuilder {
-            source_file: file_path,
+            source_file: md_path,
             vertical: matches.is_present("vertical"),
             ..RepubBuilder::default()
         };
@@ -448,7 +445,6 @@ impl RepubBuilder {
         self.unzipped_files.mimetype = Some(mimetype_path);
 
         Ok(())
-//        Ok(mimetype_path)
     }
 
     /// META-INFフォルダを配置する
@@ -472,7 +468,6 @@ impl RepubBuilder {
         self.unzipped_files.meta_inf = Some(meta_inf);
 
         Ok(())
-//        Ok(meta_inf)
     }
 
     /// OEBPSフォルダを設置する
@@ -506,7 +501,7 @@ impl RepubBuilder {
             // failed
             Err(e) => {
                 self.remove_tmp_files();
-                return Err(e);
+                Err(e)
             }
             // succeeded
             Ok(ok) => Ok(ok)
@@ -516,7 +511,7 @@ impl RepubBuilder {
     /// 一時ファイルを削除する
     fn remove_tmp_files(&self) {
         // pathを変数に代入
-        let EpubFiles {
+        let TmpFiles {
             mimetype, meta_inf, oebps
         } = &self.unzipped_files;
 
@@ -542,7 +537,7 @@ impl RepubBuilder {
         let custom_css_path = self.add_oebps(&dir_path)?;
 
         let (mimetype, meta_inf, oebps_path) = match &self.unzipped_files {
-            EpubFiles {
+            TmpFiles {
                 mimetype: Some(mimetype),
                 meta_inf: Some(meta_inf),
                 oebps: Some(oebps_path),

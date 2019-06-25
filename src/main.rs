@@ -64,13 +64,13 @@ fn main() {
         Ok(mut repub_builder) => {
             match repub_builder.build() {
                 Err(e) => {
-                    println!("{:?}", e);
+                    eprintln!("{:?}", e);
                 }
                 _ => {}
             };
         }
         Err(e) => {
-            println!("{:?}", e);
+            eprintln!("{:?}", e);
         }
     }
 }
