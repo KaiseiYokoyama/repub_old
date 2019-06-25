@@ -536,7 +536,6 @@ impl RepubBuilder {
         self.add_mimetype(&dir_path)?;
 
         // META-INFフォルダ, container.xmlを設置
-//        let meta_inf = self.add_meta_inf(&dir_path)?;
         self.add_meta_inf(&dir_path)?;
 
         // OEBPSフォルダ, styleフォルダ, vertical.css設置
@@ -616,12 +615,6 @@ impl RepubBuilder {
 
         navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes())?;
 
-        // mimetypeファイルの場所(相対パス)
-//        let mimetype_path = dir_path.join("mimetype");
-        // meta_infフォルダの場所(相対パス)
-//        let meta_inf_path = dir_path.join("META-INF");
-        // OEBPSフォルダの場所(相対パス)
-//        let oebps_path = dir_path.join("OEBPS");
 
         // zip圧縮
 //        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
