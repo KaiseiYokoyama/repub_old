@@ -4,8 +4,10 @@ mod repub;
 
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate failure;
 
-fn main() -> Result<(), ()> {
+fn main() {
     use clap::{App, Arg};
     let app = App::new(crate_name!())
         .version(crate_version!())
@@ -57,10 +59,18 @@ fn main() -> Result<(), ()> {
 
     let matches = app.get_matches();
 
-    let repub_builder = repub::RepubBuilder::new(
-        Path::new(&matches.value_of("input").unwrap()), &matches)?;
-
-    repub_builder.build();
-
-    return Ok(());
+    match repub::RepubBuilder::new(
+        Path::new(&matches.value_of("input").unwrap()), &matches) {
+        Ok(repub_builder) => {
+            match repub_builder.build() {
+                Err(e) => {
+                    println!("{:?}", e);
+                }
+                _ => {}
+            };
+        }
+        Err(e) => {
+            println!("{:?}", e);
+        }
+    }
 }

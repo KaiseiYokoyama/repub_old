@@ -1,9 +1,11 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::io::{Write, Read};
+
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use clap::ArgMatches;
-use std::io::{Write, Read};
+use failure::ResultExt;
 
 #[derive(Debug)]
 pub struct RepubBuilder {
@@ -304,11 +306,11 @@ impl ToC {
 
 impl RepubBuilder {
     /// 絶対パス、あるいは相対パスでソースを指定してRepubBuilderを得る
-    pub fn new(path: &Path, matches: &ArgMatches) -> Result<RepubBuilder, ()> {
+    pub fn new(path: &Path, matches: &ArgMatches) -> Result<RepubBuilder, failure::Error> {
         // 指定されたpathが絶対パスであったとき
         let file_path;
         // コマンドの実行path
-        let origin = &std::env::current_dir().unwrap();
+        let origin = &std::env::current_dir()?;
 
         if path.is_absolute() {
             file_path = path.to_path_buf();
@@ -319,8 +321,7 @@ impl RepubBuilder {
 
         // 存在しないpath
         if !file_path.exists() {
-            println!("[ERROR] {:?} does not exist.", &file_path);
-            return Err(());
+            return Err(format_err!("[ERROR] {:?} does not exist.", &file_path));
         }
 
         // .mdファイルorディレクトリではない
@@ -329,8 +330,7 @@ impl RepubBuilder {
                 None => {}
                 Some(ext) => {
                     if ext != "md" {
-                        println!("[ERROR] {:?} is not.md file.", &file_path);
-                        return Err(());
+                        return Err(format_err!("[ERROR] {:?} is not.md file.", &file_path));
                     }
                 }
             }
@@ -347,7 +347,7 @@ impl RepubBuilder {
             repub_builder.titled(title);
         } else {
             print!("Title: ");
-            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().context("Failed to read line.")?;
 
             let mut title = String::new();
             std::io::stdin().read_line(&mut title)
@@ -358,7 +358,7 @@ impl RepubBuilder {
         // 作者,編集者,著者
         if let None = matches.value_of("creator") {
             print!("Creator: ");
-            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().context("Failed to read line.")?;
 
             let mut creator = String::new();
             std::io::stdin().read_line(&mut creator)
@@ -369,7 +369,7 @@ impl RepubBuilder {
         // 言語
         if let None = matches.value_of("language") {
             print!("Language: ");
-            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().context("Failed to read line.")?;
 
             let mut language = String::new();
             std::io::stdin().read_line(&mut language)
@@ -427,87 +427,87 @@ impl RepubBuilder {
     }
 
     /// mimetypeファイルを配置する
-    fn add_mimetype(&self, dir_path: &PathBuf) -> PathBuf {
+    fn add_mimetype(&self, dir_path: &PathBuf) -> Result<PathBuf, failure::Error> {
         // pathを作成
         let mimetype_path = dir_path.join("mimetype");
         // ファイルを作成
-        let mut mimetype = File::create(&mimetype_path).unwrap();
+        let mut mimetype = File::create(&mimetype_path)?;
         // 書き込み
         mimetype.write_all("application/epub+zip".as_bytes()).unwrap();
 
-        mimetype_path
+        Ok(mimetype_path)
     }
 
     /// META-INFフォルダを配置する
-    fn add_meta_inf(&self, dir_path: &PathBuf) -> PathBuf {
+    fn add_meta_inf(&self, dir_path: &PathBuf) -> Result<PathBuf, failure::Error> {
         // META-INFフォルダのpathを作成
         let meta_inf = dir_path.join("META-INF");
         // フォルダを作成
-        std::fs::create_dir_all(&meta_inf);
+        std::fs::create_dir_all(&meta_inf)?;
 
         // container.xmlを作成
         let mut container = File::create(
-            meta_inf.join("container.xml")).unwrap();
+            meta_inf.join("container.xml"))?;
         // 書き込み
         container.write_all("<?xml version =\"1.0\" ?>\n\
 <container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n\
   <rootfiles>\n\
     <rootfile full-path=\"OEBPS/package.opf\" media-type=\"application/oebps-package+xml\" />\n\
   </rootfiles>\n\
-</container>".as_bytes());
+</container>".as_bytes())?;
 
-        meta_inf
+        Ok(meta_inf)
     }
 
     /// OEBPSフォルダを設置する
-    fn add_oebps(&self, dir_path: &PathBuf) -> (PathBuf, PathBuf) {
+    fn add_oebps(&self, dir_path: &PathBuf) -> Result<(PathBuf, PathBuf), failure::Error> {
         // OEBPSフォルダ設置
         let oebps_path = dir_path.join("OEBPS");
-        std::fs::create_dir_all(&oebps_path);
+        std::fs::create_dir_all(&oebps_path)?;
 
         // スタイルフォルダ設置
         let styles = oebps_path.join("styles");
-        std::fs::create_dir_all(&styles);
+        std::fs::create_dir_all(&styles)?;
 
         // 縦書きスタイル
         let vertical_css_path = styles.join("vertical.css");
-        let mut vertical_css = File::create(vertical_css_path).unwrap();
-        vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes());
+        let mut vertical_css = File::create(vertical_css_path)?;
+        vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes())?;
 
         // custom style
         let custom_css_path = styles.join("custom.css");
-        File::create(&custom_css_path).unwrap();
+        File::create(&custom_css_path)?;
 
-        (oebps_path, custom_css_path)
+        Ok((oebps_path, custom_css_path))
     }
 
-    pub fn build(&self) {
+    pub fn build(&self) -> Result<(), failure::Error> {
         let souce_file_path = &self.source_file;
         let dir_path = PathBuf::from(".");
 
         // mimetypeファイル設置
-        self.add_mimetype(&dir_path);
+        self.add_mimetype(&dir_path)?;
 
         // META-INFフォルダ, container.xmlを設置
-        let meta_inf = self.add_meta_inf(&dir_path);
+        let meta_inf = self.add_meta_inf(&dir_path)?;
 
         // OEBPSフォルダ, styleフォルダ, vertical.css設置
-        let (oebps_path, custom_css_path) = self.add_oebps(&dir_path);
+        let (oebps_path, custom_css_path) = self.add_oebps(&dir_path)?;
 
         // custom.cssに書き込み
         if let Some(path) = &self.style {
             // オリジナルのcssを読み取る
             let mut css = String::new();
-            let mut original_css = File::open(path).unwrap();
-            original_css.read_to_string(&mut css);
+            let mut original_css = File::open(path)?;
+            original_css.read_to_string(&mut css)?;
             // custom.cssに書き込み
-            let mut custom_css = File::create(custom_css_path).unwrap();
-            custom_css.write_all(css.as_bytes());
+            let mut custom_css = File::create(custom_css_path)?;
+            custom_css.write_all(css.as_bytes())?;
         }
 
         // package.opf設置
         let mut package_opf = File::create(
-            &oebps_path.join("package.opf")).unwrap();
+            &oebps_path.join("package.opf"))?;
 
         // package.opf書き込み準備
         let metadata = MetaData {
@@ -522,11 +522,10 @@ impl RepubBuilder {
         let vertical = &self.vertical;
         let mut toc_items = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, &oebps_path, &mut items, &mut toc_items, vertical.clone());
+            convert(souce_file_path, &oebps_path, &mut items, &mut toc_items, vertical.clone())?;
         } else {
             // ディレクトリから中身一覧を取得
-            let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)
-                .unwrap()
+            let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)?
                 .map(|r| r.unwrap())
                 .collect();
             // 並べ替え
@@ -537,39 +536,40 @@ impl RepubBuilder {
                 if let Some(ext_os) = path.extension() {
                     if let Some(ext) = ext_os.to_str() {
                         if ext == "md" {
-                            convert(&path, &oebps_path, &mut items, &mut toc_items, vertical.clone());
+                            convert(&path, &oebps_path, &mut items, &mut toc_items, vertical.clone())?;
                         }
                     }
                 }
-//                if "md" == path.extension().unwrap().to_str().unwrap() {
-//                    convert(&path, &oebps_path, &mut items, &mut lis, vertical.clone());
-//                }
             }
         }
 
         // package.opf書き込み
         let package = Package { metadata, items };
-        package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes());
+        package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes())?;
 
         // navigation.opf作成
         let mut navigation_opf = File::create(
-            &oebps_path.join("navigation.xhtml")).unwrap();
+            &oebps_path.join("navigation.xhtml"))?;
         let toc = ToC::new(toc_items);
 
-        navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes());
+        navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes())?;
 
         // mimetypeファイルの場所(相対パス)
         let mimetype_path = dir_path.join("mimetype");
         // meta_infフォルダの場所(相対パス)
-        let meta_inf_path = dir_path.join("META-INF");
+//        let meta_inf_path = dir_path.join("META-INF");
         // OEBPSフォルダの場所(相対パス)
         let oebps_path = dir_path.join("OEBPS");
 
 //        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
-        self.make_with_command(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
+        self.make_with_command( &mimetype_path, &meta_inf, &oebps_path)?;
+
+        Ok(())
     }
 
     /// zip前のフォルダのpathから.epubを生成する
+    /// 現在の実装では圧縮形式が違うため完全な.epubファイルにならない
+    #[allow(dead_code)]
     fn make(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
         //        use zip::result::ZipResult;
         use zip::write::{FileOptions, ZipWriter};
@@ -581,7 +581,7 @@ impl RepubBuilder {
                 file
             }
             Err(_) => {
-                std::fs::remove_file(&epub_path);
+                std::fs::remove_file(&epub_path)?;
                 File::create(&epub_path).unwrap()
             }
         };
@@ -597,15 +597,15 @@ impl RepubBuilder {
             let path = entry.unwrap().path();
             if path.is_file() {
                 writer.start_file_from_path(path.as_path(),
-                                            FileOptions::default().compression_method(method));
+                                            FileOptions::default().compression_method(method))?;
             }
         }
         // OEBPS
         writer.add_directory_from_path(oebps, FileOptions::default().compression_method(method))?;
-        for entry in std::fs::read_dir(&oebps).unwrap() {
+        for entry in std::fs::read_dir(&oebps)? {
             let path = entry.unwrap().path();
             if path.is_file() {
-                writer.start_file_from_path(path.as_path(), FileOptions::default());
+                writer.start_file_from_path(path.as_path(), FileOptions::default())?;
             }
         }
 
@@ -615,7 +615,7 @@ impl RepubBuilder {
     }
 
     /// zip前のフォルダのpathからコマンドを用いて.epubを生成する
-    fn make_with_command(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) {
+    fn make_with_command(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> Result<(),failure::Error>{
         use std::process::Command;
 
         if cfg!(target_os = "macos") {
@@ -637,17 +637,16 @@ impl RepubBuilder {
                 .output().expect("Missed zip OEBPS");
 
             // delete files
-            std::fs::remove_file(&mimetype.as_path());
-            std::fs::remove_dir_all(&meta_inf.as_path());
-            std::fs::remove_dir_all(&oebps.as_path());
+            std::fs::remove_file(&mimetype.as_path())?;
+            std::fs::remove_dir_all(&meta_inf.as_path())?;
+            std::fs::remove_dir_all(&oebps.as_path())?;
+
         }
+        Ok(())
     }
 }
 
 use scraper::{Html, Selector};
-use scraper::node::Element;
-use std::collections::HashSet;
-use std::error::Error;
 use zip::CompressionMethod;
 use zip::result::ZipResult;
 use core::borrow::BorrowMut;
@@ -693,16 +692,16 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
     toc_items
 }
 
-fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_items: &mut Vec<ToCItem>, vertical: bool) {
+fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_items: &mut Vec<ToCItem>, vertical: bool) -> Result<(), failure::Error> {
     use comrak::{markdown_to_html, ComrakOptions};
 
     // source file
-    let mut md_file = File::open(&source_path).unwrap();
+    let mut md_file = File::open(&source_path)?;
     // content
     let mut md = String::new();
-    md_file.read_to_string(&mut md);
+    md_file.read_to_string(&mut md)?;
     // convert
-    let mut comrak_options = ComrakOptions {
+    let comrak_options = ComrakOptions {
         ext_header_ids: Some("header-".to_string()),
         hardbreaks: true,
         ..ComrakOptions::default()
@@ -719,11 +718,6 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
                        , "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/custom.css\" />"
                        , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &comrak_options));
 
-    let xhtml = format!("<?xml version='1.0' encoding='utf-8'?>\n\
-<!DOCTYPE html>\n\
-{}
-", &html);
-
     // source file name
     let name = source_path.file_stem().unwrap().to_str().unwrap().replace(" ", "_");
 
@@ -734,9 +728,9 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
     // xml path
     let mut xhtml_path = PathBuf::from(name);
     xhtml_path.set_extension("xhtml");
-    let mut xhtml_file_path = &oebps_path.join(&xhtml_path);
+    let xhtml_file_path = &oebps_path.join(&xhtml_path);
     // xml file
-    File::create(xhtml_file_path).unwrap().write_all(&html.as_bytes());
+    File::create(xhtml_file_path)?.write_all(&html.as_bytes())?;
 
     items.items.push(
         Item {
@@ -744,4 +738,6 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
             ..Item::default()
         }
     );
+
+    Ok(())
 }
