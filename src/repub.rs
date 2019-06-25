@@ -191,7 +191,6 @@ impl ToCTrait for ToCItem {
 impl ToCItem {
     /// xhtml化
     fn to_nav(&self, level: u8) -> String {
-        println!("{:?}", &self);
         let title = if self.is_dummy {
             String::new()
         } else {
@@ -551,7 +550,6 @@ impl RepubBuilder {
         let mut navigation_opf = File::create(
             &oebps_path.join("navigation.xhtml")).unwrap();
         let toc = ToC::new(toc_items, self.toc_level);
-        println!("toc_level:{}", self.toc_level);
 
         navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes());
 
