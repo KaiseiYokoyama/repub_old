@@ -1,0 +1,6 @@
+<manifest>
+<item id="navigation" href="navigation.xhtml" media-type="application/xhtml+xml" properties="nav" />
+{}
+<item id="vertical_css" href="styles/vertical.css" media-type="text/css"/>
+<item id="custom_css" href="styles/custom.css" media-type="text/css"/>
+</manifest>

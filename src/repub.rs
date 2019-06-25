@@ -69,13 +69,15 @@ impl<'a> MetaData<'a> {
     fn to_xml(&self) -> String {
         use chrono::prelude::*;
 
-        format!("<metadata>\n\
-<dc:title>{}</dc:title>\n\
-<dc:language>{}</dc:language>\n\
-<dc:creator>{}</dc:creator>\n\
-<dc:identifier id=\"BookId\">{}</dc:identifier>\n\
-<meta property=\"dcterms:modified\">{}</meta>\n\
-</metadata>\n", &self.title, &self.language, &self.creator, &self.id, Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string().replace("\"", ""))
+        format!(include_str!("literals/package.opf_metadata"),
+                &self.title,
+                &self.language,
+                &self.creator,
+                &self.id,
+                Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%SZ")
+                    .to_string()
+                    .replace("\"", ""))
     }
 }
 
@@ -92,11 +94,7 @@ impl Items {
             items = format!("{}{}\n", items, item.to_manifest(i));
         }
 
-        format!("<manifest>\n{}\n{}\n{}\n{}\n</manifest>",
-                "<item id=\"navigation\" href=\"navigation.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />",
-                items,
-                "<item id=\"vertical_css\" href=\"styles/vertical.css\" media-type=\"text/css\"/>",
-                "<item id=\"custom_css\" href=\"styles/custom.css\" media-type=\"text/css\"/>")
+        format!(include_str!("literals/package.opf_manifest"), items)
     }
 
     fn to_spine(&self, vertical: bool) -> String {
@@ -440,7 +438,7 @@ impl RepubBuilder {
         // ファイルを作成
         let mut mimetype = File::create(&mimetype_path)?;
         // 書き込み
-        mimetype.write_all("application/epub+zip".as_bytes())?;
+        mimetype.write_all(include_str!("literals/mimetype").as_bytes())?;
 
         self.unzipped_files.mimetype = Some(mimetype_path);
 
@@ -458,12 +456,7 @@ impl RepubBuilder {
         let mut container = File::create(
             meta_inf.join("container.xml"))?;
         // 書き込み
-        container.write_all("<?xml version =\"1.0\" ?>\n\
-<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n\
-  <rootfiles>\n\
-    <rootfile full-path=\"OEBPS/package.opf\" media-type=\"application/oebps-package+xml\" />\n\
-  </rootfiles>\n\
-</container>".as_bytes())?;
+        container.write_all(include_str!("literals/container.xml").as_bytes())?;
 
         self.unzipped_files.meta_inf = Some(meta_inf);
 
@@ -484,7 +477,7 @@ impl RepubBuilder {
         // 縦書きスタイル
         let vertical_css_path = styles.join("vertical.css");
         let mut vertical_css = File::create(vertical_css_path)?;
-        vertical_css.write_all("html { writing-mode: vertical-rl; }".as_bytes())?;
+        vertical_css.write_all(include_str!("literals/vertical.css").as_bytes())?;
 
         // custom style
         let custom_css_path = styles.join("custom.css");
@@ -764,16 +757,8 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
         hardbreaks: true,
         ..ComrakOptions::default()
     };
-    let html = format!("<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
-<head>\n\
-<meta charset=\"utf-8\" />\n\
-{}\n\
-{}\n\
-<title>{}</title>\n\
-</head>\n\
-<body>\n{}\n</body>\n</html>",
+    let html = format!(include_str!("literals/template.xhtml"),
                        if vertical { "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />" } else { "" }
-                       , "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/custom.css\" />"
                        , source_path.file_name().unwrap().to_str().unwrap(), markdown_to_html(&md, &comrak_options));
 
     // source file name
