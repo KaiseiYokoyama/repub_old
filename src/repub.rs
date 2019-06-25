@@ -7,9 +7,18 @@ use rand::distributions::Alphanumeric;
 use clap::ArgMatches;
 use failure::ResultExt;
 
+/// epubに格納予定のファイル
+#[derive(Default, Debug)]
+pub struct EpubFiles {
+    mimetype: Option<PathBuf>,
+    meta_inf: Option<PathBuf>,
+    oebps: Option<PathBuf>,
+}
+
 #[derive(Debug)]
 pub struct RepubBuilder {
     source_file: PathBuf,
+    unzipped_files: EpubFiles,
     style: Option<PathBuf>,
     title: String,
     creator: String,
@@ -23,6 +32,7 @@ impl Default for RepubBuilder {
     fn default() -> Self {
         RepubBuilder {
             source_file: PathBuf::default(),
+            unzipped_files: EpubFiles::default(),
             style: Option::default(),
             id: rand::thread_rng().sample_iter(&Alphanumeric).take(30).collect(),
             title: String::default(),
@@ -330,7 +340,7 @@ impl RepubBuilder {
                 None => {}
                 Some(ext) => {
                     if ext != "md" {
-                        return Err(format_err!("[ERROR] {:?} is not.md file.", &file_path));
+                        return Err(format_err!("[ERROR] {:?} is not .md file.", &file_path));
                     }
                 }
             }
@@ -427,19 +437,22 @@ impl RepubBuilder {
     }
 
     /// mimetypeファイルを配置する
-    fn add_mimetype(&self, dir_path: &PathBuf) -> Result<PathBuf, failure::Error> {
+    fn add_mimetype(&mut self, dir_path: &PathBuf) -> Result<(), failure::Error> {
         // pathを作成
         let mimetype_path = dir_path.join("mimetype");
         // ファイルを作成
         let mut mimetype = File::create(&mimetype_path)?;
         // 書き込み
-        mimetype.write_all("application/epub+zip".as_bytes()).unwrap();
+        mimetype.write_all("application/epub+zip".as_bytes())?;
 
-        Ok(mimetype_path)
+        self.unzipped_files.mimetype = Some(mimetype_path);
+
+        Ok(())
+//        Ok(mimetype_path)
     }
 
     /// META-INFフォルダを配置する
-    fn add_meta_inf(&self, dir_path: &PathBuf) -> Result<PathBuf, failure::Error> {
+    fn add_meta_inf(&mut self, dir_path: &PathBuf) -> Result<(), failure::Error> {
         // META-INFフォルダのpathを作成
         let meta_inf = dir_path.join("META-INF");
         // フォルダを作成
@@ -456,11 +469,15 @@ impl RepubBuilder {
   </rootfiles>\n\
 </container>".as_bytes())?;
 
-        Ok(meta_inf)
+        self.unzipped_files.meta_inf = Some(meta_inf);
+
+        Ok(())
+//        Ok(meta_inf)
     }
 
     /// OEBPSフォルダを設置する
-    fn add_oebps(&self, dir_path: &PathBuf) -> Result<(PathBuf, PathBuf), failure::Error> {
+    /// * return - PathBuf of custom.css
+    fn add_oebps(&mut self, dir_path: &PathBuf) -> Result<PathBuf, failure::Error> {
         // OEBPSフォルダ設置
         let oebps_path = dir_path.join("OEBPS");
         std::fs::create_dir_all(&oebps_path)?;
@@ -478,21 +495,65 @@ impl RepubBuilder {
         let custom_css_path = styles.join("custom.css");
         File::create(&custom_css_path)?;
 
-        Ok((oebps_path, custom_css_path))
+        self.unzipped_files.oebps = Some(oebps_path);
+        Ok(custom_css_path)
     }
 
-    pub fn build(&self) -> Result<(), failure::Error> {
-        let souce_file_path = &self.source_file;
+    /// .epubファイルを生成する
+    /// 生成に失敗したようなら、unzippedなゴミを片付ける
+    pub fn build(&mut self) -> Result<(), failure::Error> {
+        match self.build_core() {
+            // failed
+            Err(e) => {
+                self.remove_tmp_files();
+                return Err(e);
+            }
+            // succeeded
+            Ok(ok) => Ok(ok)
+        }
+    }
+
+    /// 一時ファイルを削除する
+    fn remove_tmp_files(&self) {
+        // pathを変数に代入
+        let EpubFiles {
+            mimetype, meta_inf, oebps
+        } = &self.unzipped_files;
+
+        // 存在すれば削除
+        // エラーを拾ったときにもゴミ掃除をしたいので、エラー次第ではどれかが存在しないこともありうる
+        mimetype.clone().map(|path| std::fs::remove_file(path));
+        meta_inf.clone().map(|path| std::fs::remove_dir_all(path));
+        oebps.clone().map(|path| std::fs::remove_dir_all(path));
+    }
+
+    /// .epubファイルを生成する
+    fn build_core(&mut self) -> Result<(), failure::Error> {
+        let souce_file_path = self.source_file.clone();
         let dir_path = PathBuf::from(".");
 
         // mimetypeファイル設置
         self.add_mimetype(&dir_path)?;
 
         // META-INFフォルダ, container.xmlを設置
-        let meta_inf = self.add_meta_inf(&dir_path)?;
+//        let meta_inf = self.add_meta_inf(&dir_path)?;
+        self.add_meta_inf(&dir_path)?;
 
         // OEBPSフォルダ, styleフォルダ, vertical.css設置
-        let (oebps_path, custom_css_path) = self.add_oebps(&dir_path)?;
+        let custom_css_path = self.add_oebps(&dir_path)?;
+
+        let (mimetype, meta_inf, oebps_path) = match &self.unzipped_files {
+            EpubFiles {
+                mimetype: Some(mimetype),
+                meta_inf: Some(meta_inf),
+                oebps: Some(oebps_path),
+            } => {
+                (mimetype, meta_inf, oebps_path)
+            }
+            _ => {
+                return Err(format_err!("[ERROR] file error : {}:{}:{} ",file!(),line!(),column!()));
+            }
+        };
 
         // custom.cssに書き込み
         if let Some(path) = &self.style {
@@ -505,27 +566,16 @@ impl RepubBuilder {
             custom_css.write_all(css.as_bytes())?;
         }
 
-        // package.opf設置
-        let mut package_opf = File::create(
-            &oebps_path.join("package.opf"))?;
-
-        // package.opf書き込み準備
-        let metadata = MetaData {
-            title: &self.title,
-            creator: &self.creator,
-            language: &self.language,
-            id: &self.id,
-        };
-        let mut items = Items::default();
 
         // ファイル読み込み&変換
+        let mut items = Items::default();
         let vertical = &self.vertical;
         let mut toc_items = Vec::new();
         if souce_file_path.is_file() {
-            convert(souce_file_path, &oebps_path, &mut items, &mut toc_items, vertical.clone())?;
+            convert(&souce_file_path, &oebps_path, &mut items, &mut toc_items, vertical.clone())?;
         } else {
             // ディレクトリから中身一覧を取得
-            let mut entries: Vec<_> = std::fs::read_dir(souce_file_path)?
+            let mut entries: Vec<_> = std::fs::read_dir(&souce_file_path)?
                 .map(|r| r.unwrap())
                 .collect();
             // 並べ替え
@@ -543,6 +593,18 @@ impl RepubBuilder {
             }
         }
 
+        // package.opf設置
+        let mut package_opf = File::create(
+            &oebps_path.join("package.opf"))?;
+
+        // package.opf書き込み準備
+        let metadata = MetaData {
+            title: &self.title,
+            creator: &self.creator,
+            language: &self.language,
+            id: &self.id,
+        };
+
         // package.opf書き込み
         let package = Package { metadata, items };
         package_opf.write_all(&package.to_opf(self.vertical.clone()).as_bytes())?;
@@ -555,14 +617,15 @@ impl RepubBuilder {
         navigation_opf.write_all(&toc.to_nav(self.toc_level, self.vertical, Some(String::from("目次"))).as_bytes())?;
 
         // mimetypeファイルの場所(相対パス)
-        let mimetype_path = dir_path.join("mimetype");
+//        let mimetype_path = dir_path.join("mimetype");
         // meta_infフォルダの場所(相対パス)
 //        let meta_inf_path = dir_path.join("META-INF");
         // OEBPSフォルダの場所(相対パス)
-        let oebps_path = dir_path.join("OEBPS");
+//        let oebps_path = dir_path.join("OEBPS");
 
+        // zip圧縮
 //        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
-        self.make_with_command( &mimetype_path, &meta_inf, &oebps_path)?;
+        self.make_with_command(mimetype, meta_inf, oebps_path)?;
 
         Ok(())
     }
@@ -582,7 +645,7 @@ impl RepubBuilder {
             }
             Err(_) => {
                 std::fs::remove_file(&epub_path)?;
-                File::create(&epub_path).unwrap()
+                File::create(&epub_path)?
             }
         };
 
@@ -593,8 +656,8 @@ impl RepubBuilder {
         // META-INF
         writer.add_directory_from_path(meta_inf,
                                        FileOptions::default().compression_method(method))?;
-        for entry in std::fs::read_dir(&meta_inf).unwrap() {
-            let path = entry.unwrap().path();
+        for entry in std::fs::read_dir(&meta_inf)? {
+            let path = entry?.path();
             if path.is_file() {
                 writer.start_file_from_path(path.as_path(),
                                             FileOptions::default().compression_method(method))?;
@@ -603,7 +666,7 @@ impl RepubBuilder {
         // OEBPS
         writer.add_directory_from_path(oebps, FileOptions::default().compression_method(method))?;
         for entry in std::fs::read_dir(&oebps)? {
-            let path = entry.unwrap().path();
+            let path = entry?.path();
             if path.is_file() {
                 writer.start_file_from_path(path.as_path(), FileOptions::default())?;
             }
@@ -615,7 +678,7 @@ impl RepubBuilder {
     }
 
     /// zip前のフォルダのpathからコマンドを用いて.epubを生成する
-    fn make_with_command(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> Result<(),failure::Error>{
+    fn make_with_command(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> Result<(), failure::Error> {
         use std::process::Command;
 
         if cfg!(target_os = "macos") {
@@ -635,13 +698,10 @@ impl RepubBuilder {
                 .arg(epubname)
                 .arg(oebps.to_str().unwrap())
                 .output().expect("Missed zip OEBPS");
-
-            // delete files
-            std::fs::remove_file(&mimetype.as_path())?;
-            std::fs::remove_dir_all(&meta_inf.as_path())?;
-            std::fs::remove_dir_all(&oebps.as_path())?;
-
         }
+
+        // ファイル削除
+        self.remove_tmp_files();
         Ok(())
     }
 }
@@ -652,8 +712,13 @@ use zip::result::ZipResult;
 use core::borrow::BorrowMut;
 
 /// domからheaderを読み取り、li要素のVecを返す
-fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
-    let header_selector = Selector::parse("h1,h2,h3,h4,h5").unwrap();
+fn toc_from_dom(dom: Html, filename: &str) -> Result<Vec<ToCItem>, failure::Error> {
+    let header_selector = match Selector::parse("h1,h2,h3,h4,h5") {
+        Ok(selector) => selector,
+        Err(_) => {
+            return Err(format_err!("[ERROR] selector parse error : {}:{}:{} ",file!(),line!(),column!()));
+        }
+    };
     let headers = dom.select(&header_selector);
 
     let toc_items: Vec<ToCItem> = headers.map(|header| {
@@ -663,7 +728,12 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
             Ok(level) => level,
             Err(_) => 6,
         };
-        match header.select(&Selector::parse("a[id]").unwrap()).next() {
+
+        let element_ref = header.select(&Selector::parse("a[id]")
+            .expect(&format!("[ERROR] selector parse error : {}:{}:{} ", file!(), line!(), column!())))
+            .next();
+
+        match element_ref {
             // idあり -> a要素
             Some(id) => {
                 let id = id.value().id().map(|id| id.to_string());
@@ -689,7 +759,7 @@ fn toc_from_dom(dom: Html, filename: &str) -> Vec<ToCItem> {
         }
     }).collect();
 
-    toc_items
+    Ok(toc_items)
 }
 
 fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_items: &mut Vec<ToCItem>, vertical: bool) -> Result<(), failure::Error> {
@@ -723,7 +793,7 @@ fn convert(source_path: &PathBuf, oebps_path: &PathBuf, items: &mut Items, toc_i
 
     // toc
     let dom = Html::parse_document(&html);
-    toc_items.append(&mut toc_from_dom(dom, &name));
+    toc_items.append(&mut toc_from_dom(dom, &name)?);
 
     // xml path
     let mut xhtml_path = PathBuf::from(name);

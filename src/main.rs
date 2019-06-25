@@ -61,7 +61,7 @@ fn main() {
 
     match repub::RepubBuilder::new(
         Path::new(&matches.value_of("input").unwrap()), &matches) {
-        Ok(repub_builder) => {
+        Ok(mut repub_builder) => {
             match repub_builder.build() {
                 Err(e) => {
                     println!("{:?}", e);
