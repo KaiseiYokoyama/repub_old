@@ -623,8 +623,6 @@ impl RepubBuilder {
     }
 
     /// zip前のフォルダのpathから.epubを生成する
-    /// 現在の実装では圧縮形式が違うため完全な.epubファイルにならない
-    #[allow(dead_code)]
     fn make(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
         //        use zip::result::ZipResult;
         use zip::write::{FileOptions, ZipWriter};
@@ -642,6 +640,7 @@ impl RepubBuilder {
 
         let mut writer = ZipWriter::new(epub);
         let method = CompressionMethod::Deflated;
+
         // mimetype
         {
             writer.start_file(mimetype.to_str().unwrap(),

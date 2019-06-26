@@ -29,14 +29,15 @@ repub -s custom.css markdown_directory
 
 ## usage
 ```
-repub 0.1.0
+repub 0.1.2
 convert markdown(s) to epub
 
 USAGE:
     repub [FLAGS] [OPTIONS] <input>
 
 FLAGS:
-    -h, --help        Prints help information
+        --help        Prints help information
+        --save        一時ファイルを消去せずそのままにする
     -V, --version     Prints version information
     -v, --vertical    縦書き
 
@@ -46,9 +47,12 @@ OPTIONS:
     -l, --language <language>    言語
     -s, --css <style>            cssを指定
     -t, --title <title>          タイトルを設定
+    -h <toc_level>               目次に表示するHeaderの最低レベル(1~5)
 
 ARGS:
     <input>    変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ
+KaiseinoMacBook-Pro:repub Murakumo$ 
+
 ```
 
 ## zipping

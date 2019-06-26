@@ -1,6 +1,6 @@
 [package]
 name = "repub"
-version = "0.1.1"
+version = "0.1.2"
 authors = [" <crome110mine@gmail.com>"]
 edition = "2018"
 description = "convert markdown(s) to epub"
