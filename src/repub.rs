@@ -616,8 +616,8 @@ impl RepubBuilder {
 
 
         // zip圧縮
-//        self.make(dir_path.as_path(), &mimetype_path, &meta_inf, &oebps_path);
-        self.make_with_command(mimetype, meta_inf, oebps_path)?;
+        self.make(&mimetype, &meta_inf, &oebps_path)?;
+//        self.make_with_command(mimetype, meta_inf, oebps_path)?;
 
         Ok(())
     }
@@ -625,12 +625,11 @@ impl RepubBuilder {
     /// zip前のフォルダのpathから.epubを生成する
     /// 現在の実装では圧縮形式が違うため完全な.epubファイルにならない
     #[allow(dead_code)]
-    fn make(&self, dir_path: &Path, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
+    fn make(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> ZipResult<()> {
         //        use zip::result::ZipResult;
         use zip::write::{FileOptions, ZipWriter};
 
-        let epub_path = format!("{}.epub", &self.title);
-        let epub_path = dir_path.join(&epub_path);
+        let epub_path = PathBuf::from(&format!("{}.epub", &self.title));
         let epub = match File::create(&epub_path) {
             Ok(file) => {
                 file
@@ -642,25 +641,37 @@ impl RepubBuilder {
         };
 
         let mut writer = ZipWriter::new(epub);
-        writer.start_file(mimetype.to_str().unwrap(),
-                          FileOptions::default().compression_method(CompressionMethod::Stored))?;
         let method = CompressionMethod::Deflated;
+        // mimetype
+        {
+            writer.start_file(mimetype.to_str().unwrap(),
+                              FileOptions::default().compression_method(CompressionMethod::Stored))?;
+            writer.write(std::fs::read_to_string(mimetype)?.as_bytes())?;
+        }
+
         // META-INF
         writer.add_directory_from_path(meta_inf,
                                        FileOptions::default().compression_method(method))?;
+
+        // inner of META-INF
         for entry in std::fs::read_dir(&meta_inf)? {
             let path = entry?.path();
             if path.is_file() {
                 writer.start_file_from_path(path.as_path(),
                                             FileOptions::default().compression_method(method))?;
+                writer.write(std::fs::read_to_string(path)?.as_bytes())?;
             }
         }
+
         // OEBPS
         writer.add_directory_from_path(oebps, FileOptions::default().compression_method(method))?;
+
+        // inner of OEBPS
         for entry in std::fs::read_dir(&oebps)? {
             let path = entry?.path();
             if path.is_file() {
                 writer.start_file_from_path(path.as_path(), FileOptions::default())?;
+                writer.write(std::fs::read_to_string(path)?.as_bytes())?;
             }
         }
 
@@ -670,6 +681,7 @@ impl RepubBuilder {
     }
 
     /// zip前のフォルダのpathからコマンドを用いて.epubを生成する
+    #[allow(dead_code)]
     fn make_with_command(&self, mimetype: &PathBuf, meta_inf: &PathBuf, oebps: &PathBuf) -> Result<(), failure::Error> {
         use std::process::Command;
 
