@@ -51,7 +51,6 @@ OPTIONS:
 
 ARGS:
     <input>    変換するマークダウンファイル OR 変換するマークダウン文書(複数可)の入ったディレクトリ
-KaiseinoMacBook-Pro:repub Murakumo$ 
 
 ```
 
