@@ -674,6 +674,17 @@ impl RepubBuilder {
             }
         }
 
+        // styles
+        let styles = oebps.join("styles");
+        writer.add_directory_from_path(&styles, FileOptions::default().compression_method(method))?;
+        for entry in std::fs::read_dir(&styles)? {
+            let path = entry?.path();
+            if path.is_file() {
+                writer.start_file_from_path(path.as_path(), FileOptions::default())?;
+                writer.write(std::fs::read_to_string(path)?.as_bytes())?;
+            }
+        }
+
         writer.finish()?;
 
         Ok(())
