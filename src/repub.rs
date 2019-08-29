@@ -53,10 +53,7 @@ struct Package<'a> {
 
 impl<'a> Package<'a> {
     fn to_opf(&self, vertical: bool) -> String {
-        format!("<?xml version='1.0' encoding='utf-8'?>\n\
-<package unique-identifier=\"BookId\" version=\"3.0\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns=\"http://www.idpf.org/2007/opf\">\n\
-{}{}{}\
-</package>", &self.metadata.to_xml(), &self.items.to_manifest(), &self.items.to_spine(vertical))
+        format!(include_str!("literals/package.opf"), &self.metadata.to_xml(), &self.items.to_manifest(), &self.items.to_spine(vertical))
     }
 }
 
@@ -289,21 +286,7 @@ impl ToC {
             inners.join("")
         };
         let title = title.unwrap_or(String::new());
-        format!("<?xml version='1.0' encoding='utf-8'?>\n\
-<!DOCTYPE html>\n\
-<html xml:lang=\"ja\" lang=\"ja\" xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
-<head>\n\
-<meta charset=\"utf-8\" />\n\
-<title>{}</title>\n\
-{}\n\
-</head>\n\
-<body>\n\
-<nav epub:type=\"toc\">\n\
-<h1>{}</h1>\n\
-<ol>{}</ol>\n\
-</nav>\n\
-</body>\n\
-</html>",
+        format!(include_str!("literals/navigation.xhtml"),
                 &title,
                 if vertical {
                     "<link type=\"text/css\" rel=\"stylesheet\" href=\"styles/vertical.css\" />"
